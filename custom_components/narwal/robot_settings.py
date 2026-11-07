@@ -132,7 +132,8 @@ class NarwalRobotSettings(DataUpdateCoordinator[RobotSettingsData]):
             raise HomeAssistantError(f"Narwal rejected {what}: {result}")
         if hasattr(result, "data"):
             self._check(result, what)
-        await self.async_request_refresh()
+        # Immediate refresh (not the debounced request) so the entity shows the new value
+        await self.async_refresh()
         return result
 
     @property
