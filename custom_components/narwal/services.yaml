@@ -66,3 +66,313 @@ clean_rooms:
           options:
             - standard
             - meticulous
+
+clean_rooms_freo:
+  name: Clean rooms with Freo Mind
+  description: Start a Freo Mind clean of the given rooms. The robot uses its stored Freo preset (see the Freo selects).
+  target:
+    entity:
+      integration: narwal
+      domain: vacuum
+  fields:
+    rooms:
+      name: Rooms
+      description: Narwal room IDs, names or areas, or "all".
+      required: true
+      selector:
+        object:
+
+clean_zone:
+  name: Clean zone
+  description: Clean a rectangle given in map grid cells (the robot must be docked).
+  target:
+    entity:
+      integration: narwal
+      domain: vacuum
+  fields:
+    x1:
+      name: X1
+      required: true
+      selector:
+        number:
+          min: -2000
+          max: 2000
+          mode: box
+    y1:
+      name: Y1
+      required: true
+      selector:
+        number:
+          min: -2000
+          max: 2000
+          mode: box
+    x2:
+      name: X2
+      required: true
+      selector:
+        number:
+          min: -2000
+          max: 2000
+          mode: box
+    y2:
+      name: Y2
+      required: true
+      selector:
+        number:
+          min: -2000
+          max: 2000
+          mode: box
+    mode:
+      name: Mode
+      default: vacuum_and_mop
+      selector:
+        select:
+          options: [vacuum, mop, vacuum_and_mop, vacuum_then_mop]
+    suction:
+      name: Suction
+      default: standard
+      selector:
+        select:
+          options: [quiet, standard, strong, super_powerful, max]
+    water:
+      name: Water
+      default: normal
+      selector:
+        select:
+          options: [dry, normal, wet]
+    passes:
+      name: Passes
+      default: 1
+      selector:
+        number:
+          min: 1
+          max: 3
+    freo:
+      name: Freo Mind
+      default: false
+      selector:
+        boolean:
+
+go_to_point:
+  name: Go to point
+  description: Drive to a map point in decimetres (same frame as the robot pose).
+  target:
+    entity:
+      integration: narwal
+      domain: vacuum
+  fields:
+    x:
+      name: X (dm)
+      required: true
+      selector:
+        number:
+          min: -1000
+          max: 1000
+          step: 0.1
+          mode: box
+    y:
+      name: Y (dm)
+      required: true
+      selector:
+        number:
+          min: -1000
+          max: 1000
+          step: 0.1
+          mode: box
+
+remote_move:
+  name: Remote move
+  description: Enter remote control and drive for a short time. Speeds are -100..100. Use end to leave remote control (the robot returns to the dock).
+  target:
+    entity:
+      integration: narwal
+      domain: vacuum
+  fields:
+    linear:
+      name: Linear speed
+      default: 0
+      selector:
+        number:
+          min: -100
+          max: 100
+    angular:
+      name: Angular speed
+      default: 0
+      selector:
+        number:
+          min: -100
+          max: 100
+    duration:
+      name: Duration (s)
+      default: 1
+      selector:
+        number:
+          min: 0.2
+          max: 10
+          step: 0.1
+    mode:
+      name: Mode
+      default: joystick
+      selector:
+        select:
+          options: [joystick, clean_default, sweep_mute, sweep_normal, sweep_strong, sweep_deep, sweep_super]
+    end:
+      name: End remote control afterwards
+      default: false
+      selector:
+        boolean:
+
+play_pet_voice:
+  name: Play pet voice
+  description: Play a clip stored on the robot. Get the paths with get_pet_voices.
+  target:
+    entity:
+      integration: narwal
+      domain: vacuum
+  fields:
+    path:
+      name: Robot path
+      required: true
+      example: /userdata/usr/data/voice/voiceO17.mp3
+      selector:
+        text:
+
+get_pet_voices:
+  name: Get pet voices
+  description: List the dog and cat clips stored on the robot.
+  target:
+    entity:
+      integration: narwal
+      domain: vacuum
+
+reset_consumables:
+  name: Reset consumables
+  description: Clear consumable alerts and reset their timers (ids from the consumable enums, e.g. replace 3 = side brush).
+  target:
+    entity:
+      integration: narwal
+      domain: vacuum
+  fields:
+    maintain:
+      name: Maintenance item ids
+      selector:
+        object:
+    replace:
+      name: Replacement item ids
+      selector:
+        object:
+
+add_no_go_zone:
+  name: Add no-go zone
+  description: Add a no-go, no-mop or no-sweep polygon. Points are map grid cells.
+  target:
+    entity:
+      integration: narwal
+      domain: vacuum
+  fields:
+    polygon:
+      name: Polygon
+      required: true
+      example: "[[58, 24], [73, 24], [73, 39], [58, 39]]"
+      selector:
+        object:
+    zone_id:
+      name: Zone id
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 999
+          mode: box
+    type:
+      name: Type
+      default: no_go
+      selector:
+        select:
+          options: [no_go, no_mop, no_sweep]
+
+add_room_ban:
+  name: Ban room
+  description: Forbid a whole room.
+  target:
+    entity:
+      integration: narwal
+      domain: vacuum
+  fields:
+    room:
+      name: Room
+      required: true
+      selector:
+        text:
+    zone_id:
+      name: Zone id
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 999
+          mode: box
+    type:
+      name: Type
+      default: no_go
+      selector:
+        select:
+          options: [no_go, no_mop, no_sweep]
+
+remove_no_go_zone:
+  name: Remove no-go zone
+  description: Delete a no-go zone or room ban by id.
+  target:
+    entity:
+      integration: narwal
+      domain: vacuum
+  fields:
+    zone_id:
+      name: Zone id
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 999
+          mode: box
+
+update_room:
+  name: Update room
+  description: Rename a room, set its floor material or its heavily-soiled flag.
+  target:
+    entity:
+      integration: narwal
+      domain: vacuum
+  fields:
+    room:
+      name: Room
+      required: true
+      selector:
+        text:
+    name:
+      name: New name
+      selector:
+        text:
+    floor:
+      name: Floor material
+      selector:
+        select:
+          options: [wood, tile, cobblestone, tatami, marble]
+    heavy_dirty:
+      name: Heavily soiled
+      selector:
+        boolean:
+
+set_map_name:
+  name: Set map name
+  description: Rename the active map (empty clears it).
+  target:
+    entity:
+      integration: narwal
+      domain: vacuum
+  fields:
+    name:
+      name: Name
+      required: true
+      selector:
+        text:

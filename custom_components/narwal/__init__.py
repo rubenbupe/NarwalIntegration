@@ -43,6 +43,8 @@ from .narwal_client import (
     RoomCleanSettings,
     WorkMode,
 )
+from .extended_services import async_register_extended_services
+from .robot_settings import NarwalRobotSettings
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -472,6 +474,22 @@ def _async_register_services(hass: HomeAssistant) -> None:
         schema=CLEAN_ROOMS_SCHEMA,
     )
 
+    async def _async_resolve_one(call: ServiceCall) -> NarwalCoordinator:
+        entity_ids = await _async_extract_entity_ids(call)
+        if not entity_ids:
+            loaded = list(_domain_data(hass).values())
+            if len(loaded) == 1:
+                return loaded[0]
+            raise HomeAssistantError("Target a Narwal vacuum")
+        coordinators = await _async_get_service_coordinators(hass, entity_ids)
+        if len(coordinators) != 1:
+            raise HomeAssistantError("Target exactly one Narwal vacuum")
+        return coordinators[0]
+
+    async_register_extended_services(
+        hass, _async_resolve_one, _async_room_ids_for_coordinator
+    )
+
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Set up Narwal services."""
@@ -573,6 +591,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: NarwalConfigEntry) -> bo
 
     entry.runtime_data = coordinator
     _domain_data(hass)[entry.entry_id] = coordinator
+
+    # Robot settings, Freo preset, language and battery health (slow poll).
+    coordinator.robot_settings = NarwalRobotSettings(hass, coordinator)
+    await coordinator.robot_settings.async_refresh()
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 

@@ -72,6 +72,7 @@ from .const import (
     WorkMode,
     fan_level_for_live_command,
 )
+from .extended import ExtendedCommandsMixin
 from .models import (
     DOCK_TASK_DRY_DOCK_BAG,
     DOCK_TASK_DRY_DUST_BIN,
@@ -313,7 +314,7 @@ def _url_host(host: str) -> str:
     return f"[{host}]" if version == 6 else host
 
 
-class NarwalClient:
+class NarwalClient(ExtendedCommandsMixin):
     """Async WebSocket client for communicating with a Narwal vacuum.
 
     Usage:
@@ -1391,6 +1392,7 @@ class NarwalClient:
         mop_strength: MopStrengthLevel = MopStrengthLevel.NORMAL,
         passes: int = 1,
         route: CleaningRoute | None = None,
+        freo: bool = False,
     ) -> CommandResponse:
         """Start a whole-house clean.
 
@@ -1422,6 +1424,7 @@ class NarwalClient:
             mop_strength=mop_strength,
             passes=passes,
             route=route,
+            freo=freo,
         )
 
     def _build_clean_payload_v2(
@@ -1574,6 +1577,7 @@ class NarwalClient:
         passes: int = 1,
         route: CleaningRoute | None = None,
         room_settings: Mapping[int, RoomCleanSettings] | None = None,
+        freo: bool = False,
     ) -> bytes:
         """Build a clean/start_clean request for the given rooms.
 
@@ -1616,6 +1620,8 @@ class NarwalClient:
         params_by_room: dict[int, dict[str, int]] = {}
         for rid, settings in settings_by_room.items():
             params_by_room[rid] = self._clean_param_for_settings(settings)
+            if freo:
+                params_by_room[rid]["9"] = 1  # CleanParam.enableSmartMode
             param_keys.update(params_by_room[rid])
 
         items = [
@@ -1625,7 +1631,7 @@ class NarwalClient:
         task = {
             "1": map_id,
             "2": items if len(items) > 1 else items[0],
-            "3": {},
+            "3": {"1": 1} if freo else {},  # TaskOption.enableSmartMode
             "5": int(task_type),  # CleanTask.taskType
         }
         item_typedef = {
@@ -1646,7 +1652,9 @@ class NarwalClient:
         typedef = {"1": {"type": "message", "message_typedef": {
             "1": {"type": "int"},
             "2": item_typedef,
-            "3": {"type": "message", "message_typedef": {}},
+            "3": {"type": "message", "message_typedef": (
+                {"1": {"type": "int"}} if freo else {}
+            )},
             "5": {"type": "int"},
         }}}
         return blackboxprotobuf.encode_message({"1": task}, typedef)
@@ -1662,8 +1670,13 @@ class NarwalClient:
         passes: int = 1,
         route: CleaningRoute | None = None,
         room_settings: Mapping[int, RoomCleanSettings] | None = None,
+        freo: bool = False,
     ) -> CommandResponse:
         """Start cleaning the given rooms via clean/start_clean.
+
+        freo=True starts a Freo Mind clean: CleanParam.9 enableSmartMode on every
+        item plus TaskOption.1 enableSmartMode; the robot applies its stored Freo
+        preset (config field 29).
 
         Room cleaning must use clean/start_clean (StartClean → CleanTask), not
         clean/plan/start: on Flow firmware the latter is StartWithPlan{planId,
@@ -1716,6 +1729,7 @@ class NarwalClient:
                     passes=passes,
                     route=route,
                     room_settings=room_settings,
+                    freo=freo,
                 )
             except ValueError as err:
                 _LOGGER.warning("start_rooms: %s", err)

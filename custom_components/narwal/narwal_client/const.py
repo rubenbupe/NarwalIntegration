@@ -161,7 +161,11 @@ UNAWAITED_ACK_WINDOW = 5.0  # seconds
 # response order. On a Freo X10 Pro (v01.03.10.03) status/app_status_heartbeat
 # drew no response, alone or inside a wake burst, while active_robot_publish,
 # notify_app_event and get_device_base_status were each answered once.
-UNACKNOWLEDGED_TOPICS = frozenset({TOPIC_CMD_APP_HEARTBEAT})
+# telecontrol/velocity_control is a publish: the robot never answers it, so an
+# expected ack would steal the next real command's response.
+UNACKNOWLEDGED_TOPICS = frozenset(
+    {TOPIC_CMD_APP_HEARTBEAT, "telecontrol/velocity_control"}
+)
 
 # display_map dropout detection — if robot is cleaning but no display_map
 # arrives for this long, escalate to a full wake burst to recover the

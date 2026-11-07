@@ -27,6 +27,7 @@ from .dock_tasks import (
     is_robot_work_context,
 )
 from .entity import NarwalDockEntity, NarwalEntity
+from .robot_settings_entities import settings_switches
 from .narwal_client import CommandResponse, CommandResult
 
 
@@ -135,6 +136,8 @@ async def async_setup_entry(
     )
     async_add_room_selection_entities()
     entry.async_on_unload(coordinator.async_add_listener(async_add_room_selection_entities))
+    if (settings := getattr(coordinator, "robot_settings", None)) is not None:
+        async_add_entities(settings_switches(settings))
 
 
 def _format_duration(seconds: int) -> str:

@@ -84,6 +84,18 @@
           "fully_charged": "Fully Charged",
           "not_charging": "Not Charging"
         }
+      },
+      "battery_health": {
+        "name": "Battery health"
+      },
+      "battery_cycles": {
+        "name": "Battery charge cycles"
+      },
+      "battery_temperature": {
+        "name": "Battery temperature"
+      },
+      "battery_capacity": {
+        "name": "Battery capacity"
       }
     },
     "binary_sensor": {
@@ -147,11 +159,175 @@
           "normal": "Normal",
           "high": "High"
         }
+      },
+      "mop_drying_strength": {
+        "name": "Mop drying intensity",
+        "state": {
+          "quiet": "Quiet",
+          "strong": "Strong",
+          "smart": "Smart"
+        }
+      },
+      "rewash_area": {
+        "name": "Rewash by area",
+        "state": {
+          "efficient_15m2": "Efficient (15 m²)",
+          "normal_20m2": "Normal (20 m²)",
+          "deep_30m2": "Deep (30 m²)"
+        }
+      },
+      "carpet_mode": {
+        "name": "Existing carpet mode",
+        "state": {
+          "cross": "Cross",
+          "clean": "Clean",
+          "vacuum_and_mop": "Vacuum and mop",
+          "avoid": "Avoid"
+        }
+      },
+      "new_carpet_mode": {
+        "name": "New carpet mode",
+        "state": {
+          "cross": "Cross",
+          "clean": "Clean",
+          "vacuum_and_mop": "Vacuum and mop",
+          "avoid": "Avoid"
+        }
+      },
+      "freo_intensity": {
+        "name": "Freo intensity",
+        "state": {
+          "quick": "Quick",
+          "normal": "Normal",
+          "deep": "Deep"
+        }
+      },
+      "dock_default_mode": {
+        "name": "Dock button default mode",
+        "state": {
+          "vacuum": "Vacuum",
+          "mop": "Mop",
+          "vacuum_and_mop": "Vacuum and mop",
+          "vacuum_then_mop": "Vacuum then mop"
+        }
+      },
+      "obstacle_avoidance": {
+        "name": "Obstacle avoidance",
+        "state": {
+          "smart": "Smart",
+          "safer": "Safer",
+          "off": "Off"
+        }
+      },
+      "robot_default_mode": {
+        "name": "Robot default mode",
+        "state": {
+          "vacuum": "Vacuum",
+          "mop": "Mop",
+          "vacuum_and_mop": "Vacuum and mop",
+          "vacuum_then_mop": "Vacuum then mop"
+        }
+      },
+      "corner_cleaning": {
+        "name": "Intensive corner cleaning",
+        "state": {
+          "on": "On",
+          "off": "Off"
+        }
+      },
+      "pet_icon": {
+        "name": "Pet icon",
+        "state": {
+          "cat": "Cat",
+          "dog": "Dog",
+          "cat_and_dog": "Cat and dog"
+        }
+      },
+      "carpet_priority": {
+        "name": "Carpet priority",
+        "state": {
+          "default": "Default",
+          "carpet_first": "Carpet first"
+        }
+      },
+      "carpet_focus": {
+        "name": "CarpetFocus cleaning",
+        "state": {
+          "off": "Off",
+          "on": "On"
+        }
+      },
+      "station_light": {
+        "name": "Station light",
+        "state": {
+          "off": "Off",
+          "on": "On"
+        }
+      },
+      "freo_remop_limit": {
+        "name": "Freo re-mopping limit",
+        "state": {
+          "smart": "Smart",
+          "1": "1 cycle",
+          "2": "2 cycles",
+          "3": "3 cycles"
+        }
+      },
+      "freo_coverage": {
+        "name": "Freo coverage precision",
+        "state": {
+          "smart": "Smart",
+          "standard": "Standard",
+          "intensive": "Intensive"
+        }
+      },
+      "freo_suction": {
+        "name": "Freo suction",
+        "state": {
+          "smart": "Smart",
+          "quiet": "Quiet",
+          "standard": "Standard",
+          "strong": "Strong",
+          "super_powerful": "Super powerful",
+          "max": "Max (not in app)"
+        }
+      },
+      "freo_mop_humidity": {
+        "name": "Freo mopping humidity",
+        "state": {
+          "smart": "Smart",
+          "slightly_dry": "Slightly dry",
+          "standard": "Standard",
+          "high": "High"
+        }
+      },
+      "voice_language": {
+        "name": "Voice language",
+        "state": {
+          "zh_hans": "Chinese (Simplified)",
+          "zh_hant": "Chinese (Traditional)",
+          "en": "English",
+          "ko": "Korean",
+          "ja": "Japanese",
+          "de": "German",
+          "he": "Hebrew",
+          "it": "Italian",
+          "fr": "French",
+          "es": "Spanish",
+          "ru": "Russian",
+          "pl": "Polish",
+          "tr": "Turkish",
+          "th": "Thai",
+          "vi": "Vietnamese"
+        }
       }
     },
     "number": {
       "passes": {
         "name": "Cleaning passes"
+      },
+      "volume": {
+        "name": "Voice volume"
       }
     },
     "light": {
@@ -183,6 +359,77 @@
       },
       "show_furniture_labels": {
         "name": "Show furniture labels"
+      },
+      "plateau_mode": {
+        "name": "Plateau mode"
+      },
+      "auto_detergent": {
+        "name": "Auto detergent dosing"
+      },
+      "child_lock": {
+        "name": "Child lock"
+      },
+      "carpet_cleaning": {
+        "name": "Carpet cleaning"
+      },
+      "dirt_detection": {
+        "name": "Smart dirt detection"
+      },
+      "carpet_customize": {
+        "name": "Customize existing carpets"
+      },
+      "pet_mode": {
+        "name": "Pet-friendly mode"
+      },
+      "smart_deep_clean": {
+        "name": "Freo smart deep clean"
+      },
+      "obstacle_photos": {
+        "name": "Show obstacle photos"
+      },
+      "moisture_proof_pad": {
+        "name": "Moisture-proof pad protection"
+      },
+      "auto_empty": {
+        "name": "Auto-empty"
+      },
+      "smart_auto_empty": {
+        "name": "Smart auto-empty"
+      },
+      "quiet_auto_empty": {
+        "name": "Quiet auto-empty"
+      },
+      "dust_bag_disinfection": {
+        "name": "Dust bin auto disinfection"
+      },
+      "hot_water_mop_wash": {
+        "name": "Hot water mop wash"
+      },
+      "intensive_large_soiled": {
+        "name": "Freo intensive cleaning for large soiled areas"
+      },
+      "voice_assistant": {
+        "name": "Navo voice assistant"
+      },
+      "auto_power_off": {
+        "name": "Auto power-off"
+      },
+      "dust_sensor_detection": {
+        "name": "Dust sensor dirt detection"
+      },
+      "recognize_all_objects": {
+        "name": "Recognize all objects"
+      },
+      "precious_item_guard": {
+        "name": "Precious item guard"
+      }
+    },
+    "button": {
+      "search_pet": {
+        "name": "Find pet"
+      },
+      "stop_remote_control": {
+        "name": "End remote control"
       }
     }
   }

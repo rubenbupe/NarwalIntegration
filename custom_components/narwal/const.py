@@ -101,6 +101,7 @@ PLATFORMS: list[Platform] = [
     Platform.NUMBER,
     Platform.SWITCH,
     Platform.LIGHT,
+    Platform.BUTTON,
 ]
 
 CONF_SHOW_ROOM_LABELS = "show_room_labels"
