@@ -27,6 +27,21 @@ SERVICE_ADD_ROOM_BAN = "add_room_ban"
 SERVICE_REMOVE_NO_GO_ZONE = "remove_no_go_zone"
 SERVICE_UPDATE_ROOM = "update_room"
 SERVICE_SET_MAP_NAME = "set_map_name"
+SERVICE_SET_ROOM_ORDER = "set_room_order"
+SERVICE_ADD_CARPET = "add_carpet"
+SERVICE_SET_CARPET_MODE = "set_carpet_mode"
+SERVICE_DELETE_CARPET = "delete_carpet"
+SERVICE_ADD_THRESHOLD = "add_threshold"
+SERVICE_DELETE_THRESHOLD = "delete_threshold"
+SERVICE_UPDATE_FURNITURE = "update_furniture"
+SERVICE_DELETE_FURNITURE = "delete_furniture"
+SERVICE_ROTATE_MAP = "rotate_map"
+SERVICE_SPLIT_ROOM = "split_room"
+SERVICE_MERGE_ROOMS = "merge_rooms"
+SERVICE_SWITCH_MAP = "switch_map"
+SERVICE_DELETE_MAP = "delete_map"
+SERVICE_START_MAPPING = "start_mapping"
+SERVICE_CONTINUE_TASK = "continue_task"
 
 TARGET = {
     vol.Optional("entity_id"): cv.comp_entity_ids,
@@ -112,6 +127,61 @@ UPDATE_ROOM_SCHEMA = vol.Schema(
     }
 )
 SET_MAP_NAME_SCHEMA = vol.Schema({**TARGET, vol.Required("name"): cv.string})
+CARPET_MODES = {"cross": 1, "clean": 2, "vacuum_and_mop": 3, "avoid": 4}
+ID = vol.All(vol.Coerce(int), vol.Range(0, 100000))
+SET_ROOM_ORDER_SCHEMA = vol.Schema({**TARGET, vol.Required("order"): cv.ensure_list})
+ADD_CARPET_SCHEMA = vol.Schema(
+    {
+        **TARGET,
+        vol.Required("polygon"): vol.All(cv.ensure_list, vol.Length(min=3), [POINT]),
+        vol.Optional("mode", default="clean"): vol.In(CARPET_MODES),
+        vol.Optional("deep_clean", default=False): cv.boolean,
+    }
+)
+SET_CARPET_MODE_SCHEMA = vol.Schema(
+    {**TARGET, vol.Required("carpet_id"): ID, vol.Required("mode"): vol.In(CARPET_MODES)}
+)
+DELETE_CARPET_SCHEMA = vol.Schema({**TARGET, vol.Required("carpet_id"): ID})
+ADD_THRESHOLD_SCHEMA = vol.Schema(
+    {
+        **TARGET,
+        vol.Required("start"): POINT,
+        vol.Required("end"): POINT,
+        vol.Optional("height", default=20): vol.All(vol.Coerce(int), vol.Range(1, 60)),
+    }
+)
+DELETE_THRESHOLD_SCHEMA = vol.Schema({**TARGET, vol.Required("threshold_id"): ID})
+UPDATE_FURNITURE_SCHEMA = vol.Schema(
+    {
+        **TARGET,
+        vol.Required("furniture_id"): ID,
+        vol.Optional("x"): vol.Coerce(float),
+        vol.Optional("y"): vol.Coerce(float),
+        vol.Optional("angle"): vol.Coerce(float),
+    }
+)
+DELETE_FURNITURE_SCHEMA = vol.Schema({**TARGET, vol.Required("furniture_id"): ID})
+ROTATE_MAP_SCHEMA = vol.Schema(
+    {**TARGET, vol.Required("angle"): vol.All(vol.Coerce(int), vol.In([0, 90, 180, 270]))}
+)
+SPLIT_ROOM_SCHEMA = vol.Schema(
+    {
+        **TARGET,
+        vol.Required("room"): cv.string,
+        vol.Required("start"): POINT,
+        vol.Required("end"): POINT,
+    }
+)
+MERGE_ROOMS_SCHEMA = vol.Schema(
+    {**TARGET, vol.Required("room_a"): cv.string, vol.Required("room_b"): cv.string}
+)
+MAP_ID_SCHEMA = vol.Schema({**TARGET, vol.Required("map_id"): ID})
+DELETE_MAP_SCHEMA = vol.Schema(
+    {**TARGET, vol.Required("map_id"): ID, vol.Required("confirm"): vol.In([True, "delete"])}
+)
+START_MAPPING_SCHEMA = vol.Schema(
+    {**TARGET, vol.Optional("rebuild_current", default=False): cv.boolean}
+)
 
 
 def _accepted(response: Any) -> bool:
@@ -254,6 +324,134 @@ def async_register_extended_services(
         _coordinator, client = await _client(call)
         _check_map(await client.set_map_name(call.data["name"]), "map name")
 
+    async def _one_room(coordinator, raw: str) -> int:
+        rooms = await room_ids(coordinator, [raw])
+        if len(rooms) != 1:
+            raise HomeAssistantError(f"Select exactly one room (got {raw!r})")
+        return rooms[0]
+
+    async def _refresh(coordinator) -> None:
+        settings = getattr(coordinator, "robot_settings", None)
+        if settings is not None:
+            await settings.async_request_refresh()
+        await coordinator.async_request_refresh()
+
+    async def set_room_order(call: ServiceCall) -> None:
+        coordinator, client = await _client(call)
+        rooms = await room_ids(coordinator, call.data["order"])
+        if not rooms:
+            raise HomeAssistantError("At least one room must be given")
+        response = await client.set_room_order(rooms, _map_id(coordinator))
+        if not _accepted(response):
+            raise HomeAssistantError(f"Narwal rejected the room order ({response.data})")
+        await _refresh(coordinator)
+
+    async def add_carpet(call: ServiceCall) -> dict[str, Any]:
+        coordinator, client = await _client(call)
+        polygon = [(int(round(x)), int(round(y))) for x, y in call.data["polygon"]]
+        result = await client.add_carpet(
+            polygon, CARPET_MODES[call.data["mode"]], call.data["deep_clean"]
+        )
+        _check_map(result, "carpet")
+        await _refresh(coordinator)
+        return {"carpet_id": result.get("id")}
+
+    async def set_carpet_mode(call: ServiceCall) -> None:
+        coordinator, client = await _client(call)
+        result = await client.set_carpet_option(
+            call.data["carpet_id"], CARPET_MODES[call.data["mode"]]
+        )
+        _check_map(result, "carpet mode")
+        await _refresh(coordinator)
+
+    async def delete_carpet(call: ServiceCall) -> None:
+        coordinator, client = await _client(call)
+        _check_map(await client.delete_carpet(call.data["carpet_id"]), "carpet removal")
+        await _refresh(coordinator)
+
+    async def add_threshold(call: ServiceCall) -> dict[str, Any]:
+        coordinator, client = await _client(call)
+        result = await client.add_threshold(
+            tuple(call.data["start"]), tuple(call.data["end"]), call.data["height"]
+        )
+        _check_map(result, "obstacle crossing line")
+        await _refresh(coordinator)
+        return {"threshold_id": result.get("id")}
+
+    async def delete_threshold(call: ServiceCall) -> None:
+        coordinator, client = await _client(call)
+        _check_map(await client.delete_threshold(call.data["threshold_id"]), "line removal")
+        await _refresh(coordinator)
+
+    async def update_furniture(call: ServiceCall) -> None:
+        coordinator, client = await _client(call)
+        try:
+            result = await client.update_furniture(
+                call.data["furniture_id"],
+                x=call.data.get("x"),
+                y=call.data.get("y"),
+                angle=call.data.get("angle"),
+            )
+        except KeyError as err:
+            raise HomeAssistantError(f"No furniture with id {err}") from err
+        _check_map(result, "furniture")
+        await _refresh(coordinator)
+
+    async def delete_furniture(call: ServiceCall) -> None:
+        coordinator, client = await _client(call)
+        try:
+            result = await client.delete_furniture(call.data["furniture_id"])
+        except KeyError as err:
+            raise HomeAssistantError(f"No furniture with id {err}") from err
+        _check_map(result, "furniture removal")
+        await _refresh(coordinator)
+
+    async def rotate_map(call: ServiceCall) -> None:
+        coordinator, client = await _client(call)
+        _check_map(await client.rotate_map(call.data["angle"]), "map rotation")
+        await _refresh(coordinator)
+
+    async def split_room(call: ServiceCall) -> dict[str, Any]:
+        coordinator, client = await _client(call)
+        room = await _one_room(coordinator, call.data["room"])
+        result = await client.split_room(room, tuple(call.data["start"]), tuple(call.data["end"]))
+        _check_map(result, "room split")
+        await _refresh(coordinator)
+        return {"new_room_id": result.get("new_room_id")}
+
+    async def merge_rooms(call: ServiceCall) -> None:
+        coordinator, client = await _client(call)
+        room_a = await _one_room(coordinator, call.data["room_a"])
+        room_b = await _one_room(coordinator, call.data["room_b"])
+        _check_map(await client.merge_rooms(room_a, room_b), "room merge")
+        await _refresh(coordinator)
+
+    async def switch_map(call: ServiceCall) -> None:
+        coordinator, client = await _client(call)
+        response = await client.switch_map(call.data["map_id"])
+        if not _accepted(response):
+            raise HomeAssistantError(f"Narwal could not switch map ({response.data})")
+        await _refresh(coordinator)
+
+    async def delete_map(call: ServiceCall) -> None:
+        coordinator, client = await _client(call)
+        response = await client.delete_map(call.data["map_id"])
+        if not _accepted(response):
+            raise HomeAssistantError(f"Narwal could not delete map ({response.data})")
+        await _refresh(coordinator)
+
+    async def start_mapping(call: ServiceCall) -> None:
+        _coordinator, client = await _client(call)
+        response = await client.start_mapping(call.data["rebuild_current"])
+        if not _accepted(response):
+            raise HomeAssistantError(f"Narwal could not start mapping ({response.data})")
+
+    async def continue_task(call: ServiceCall) -> None:
+        _coordinator, client = await _client(call)
+        response = await client.continue_task()
+        if not _accepted(response):
+            raise HomeAssistantError(f"Nothing to continue ({response.data})")
+
     registrations = (
         (SERVICE_CLEAN_ZONE, clean_zone, CLEAN_ZONE_SCHEMA, None),
         (SERVICE_GO_TO_POINT, go_to_point, GO_TO_POINT_SCHEMA, None),
@@ -266,6 +464,21 @@ def async_register_extended_services(
         (SERVICE_REMOVE_NO_GO_ZONE, remove_no_go_zone, REMOVE_NO_GO_ZONE_SCHEMA, None),
         (SERVICE_UPDATE_ROOM, update_room, UPDATE_ROOM_SCHEMA, None),
         (SERVICE_SET_MAP_NAME, set_map_name, SET_MAP_NAME_SCHEMA, None),
+        (SERVICE_SET_ROOM_ORDER, set_room_order, SET_ROOM_ORDER_SCHEMA, None),
+        (SERVICE_ADD_CARPET, add_carpet, ADD_CARPET_SCHEMA, SupportsResponse.OPTIONAL),
+        (SERVICE_SET_CARPET_MODE, set_carpet_mode, SET_CARPET_MODE_SCHEMA, None),
+        (SERVICE_DELETE_CARPET, delete_carpet, DELETE_CARPET_SCHEMA, None),
+        (SERVICE_ADD_THRESHOLD, add_threshold, ADD_THRESHOLD_SCHEMA, SupportsResponse.OPTIONAL),
+        (SERVICE_DELETE_THRESHOLD, delete_threshold, DELETE_THRESHOLD_SCHEMA, None),
+        (SERVICE_UPDATE_FURNITURE, update_furniture, UPDATE_FURNITURE_SCHEMA, None),
+        (SERVICE_DELETE_FURNITURE, delete_furniture, DELETE_FURNITURE_SCHEMA, None),
+        (SERVICE_ROTATE_MAP, rotate_map, ROTATE_MAP_SCHEMA, None),
+        (SERVICE_SPLIT_ROOM, split_room, SPLIT_ROOM_SCHEMA, SupportsResponse.OPTIONAL),
+        (SERVICE_MERGE_ROOMS, merge_rooms, MERGE_ROOMS_SCHEMA, None),
+        (SERVICE_SWITCH_MAP, switch_map, MAP_ID_SCHEMA, None),
+        (SERVICE_DELETE_MAP, delete_map, DELETE_MAP_SCHEMA, None),
+        (SERVICE_START_MAPPING, start_mapping, START_MAPPING_SCHEMA, None),
+        (SERVICE_CONTINUE_TASK, continue_task, TARGET_ONLY_SCHEMA, None),
     )
     for name, handler, schema, supports_response in registrations:
         if hass.services.has_service(DOMAIN, name):

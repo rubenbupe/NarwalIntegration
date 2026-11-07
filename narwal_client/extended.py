@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import TYPE_CHECKING, Any
@@ -17,6 +18,8 @@ from .pb import (
     WIRE_VARINT,
     all_values,
     as_double,
+    as_float,
+    as_signed,
     f_bytes,
     f_float,
     f_int,
@@ -225,6 +228,105 @@ def decode_freo_preset(preset: bytes | None) -> dict[FreoStrategy, int | None]:
     return result
 
 
+class CornerFrequency(IntEnum):
+    """CleanCornerSetting.cleanCornerFreq."""
+
+    OFF = 1
+    EVERY_N_CLEANS = 2
+    EVERY_N_DAYS = 3
+
+
+class RewashStrategy(IntEnum):
+    """CustomCleanStrategy.strategy (Floor Cleaning screen)."""
+
+    BY_AREA = 1
+    BY_ROOM = 2
+    SMART = 3
+
+
+# Sub-message settings: name -> (Config get field, SetConfig_Request field).
+CONFIG_MESSAGES: dict[str, tuple[int, int]] = {
+    "do_not_disturb": (4, 5),
+    "corner_frequency": (14, 10),
+    "clean_strategy": (18, 18),
+    "off_peak_charging": (38, 38),
+    "map_configuration": (44, 44),
+}
+CONFIG_FIELD_NO_STAIRS_SET = 11
+OFF_PEAK_MIN_DURATION = 3 * 3600
+CONFIG_FIELD_NO_STAIRS_GET = 10
+
+
+def _seconds(value: int) -> int:
+    """Clamp a time of day to 0..86399 seconds."""
+    return max(0, min(86399, int(value)))
+
+
+def _packed_ints(value: int | bytes | None) -> list[int]:
+    if isinstance(value, int):
+        return [value]
+    out: list[int] = []
+    pos = 0
+    data = value or b""
+    while pos < len(data):
+        item, pos = read_varint(data, pos)
+        out.append(item)
+    return out
+
+
+def decode_config_messages(config: bytes) -> dict[str, Any]:
+    """Decode the sub-message settings of a Config message."""
+
+    def msg(name: str) -> bytes:
+        value = first(config, CONFIG_MESSAGES[name][0])
+        return value if isinstance(value, bytes) else b""
+
+    dnd = msg("do_not_disturb")
+    valley = msg("off_peak_charging")
+    corner = msg("corner_frequency")
+    strategy = msg("clean_strategy")
+    orders: dict[int, dict[str, Any]] = {}
+    for value in all_values(strategy, 4):
+        if isinstance(value, bytes):
+            map_id = int(first(value, 4) or 0)
+            orders[map_id] = {
+                "custom": bool(first(value, 1)),
+                "order": [v for v in _all_packed(value, 2)],
+                "default": [v for v in _all_packed(value, 3)],
+            }
+    no_stairs_maps = {}
+    for value in all_values(msg("map_configuration"), 1):
+        if isinstance(value, bytes):
+            no_stairs_maps[int(first(value, 1) or 0)] = bool(first(value, 2))
+    return {
+        "do_not_disturb": {
+            "enabled": bool(first(dnd, 1)),
+            "begin": int(first(dnd, 2) or 0),
+            "end": int(first(dnd, 3) or 0),
+        },
+        "off_peak_charging": {
+            "enabled": bool(first(valley, 1)),
+            "begin": int(first(valley, 2) or 0),
+            "duration": int(first(valley, 3) or 0),
+        },
+        "corner_frequency": {
+            "frequency": int(first(corner, 1) or 0),
+            "interval": int(first(corner, 2) or 0),
+        },
+        "rewash_strategy": int(first(strategy, 1) or 0),
+        "room_orders": orders,
+        "no_stairs": bool(first(config, CONFIG_FIELD_NO_STAIRS_GET)),
+        "no_stairs_maps": no_stairs_maps,
+    }
+
+
+def _all_packed(message: bytes, field: int) -> list[int]:
+    out: list[int] = []
+    for value in all_values(message, field):
+        out.extend(_packed_ints(value))
+    return out
+
+
 class ExtendedCommandsMixin:
     """Commands mixed into NarwalClient. Relies on send_command / _send_unawaited."""
 
@@ -237,12 +339,128 @@ class ExtendedCommandsMixin:
         return config if isinstance(config, bytes) else b""
 
     async def get_config(self) -> dict[str, Any]:
-        """Return every known setting by name, plus the Freo preset."""
+        """Return every known setting by name, plus the Freo preset and sub-messages."""
         raw = await self.get_config_raw()
         values = decode_config(raw)
         preset = first(raw, CONFIG_FIELD_FREO_PRESET)
         values["freo_preset"] = decode_freo_preset(preset if isinstance(preset, bytes) else None)
+        values.update(decode_config_messages(raw))
         return values
+
+    async def _set_config_message(
+        self, name: str, edit: Callable[[bytes], bytes]
+    ) -> CommandResponse:
+        """Read a sub-message setting, let edit() change it, write it back whole."""
+        get_field, set_field = CONFIG_MESSAGES[name]
+        raw = await self.get_config_raw()
+        current = first(raw, get_field)
+        body = edit(current if isinstance(current, bytes) else b"")
+        return await self.send_command(  # type: ignore[attr-defined]
+            TOPIC_CMD_CONFIG_SET, f_msg(set_field, body)
+        )
+
+    async def set_do_not_disturb(
+        self, enabled: bool | None = None, begin: int | None = None, end: int | None = None
+    ) -> CommandResponse:
+        """Do Not Disturb: enabled, begin/end in seconds from midnight."""
+
+        def edit(msg: bytes) -> bytes:
+            if enabled is not None:
+                msg = replace_field(msg, 1, f_int(1, True) if enabled else None)
+            if begin is not None:
+                msg = replace_field(msg, 2, f_int(2, _seconds(begin)))
+            if end is not None:
+                msg = replace_field(msg, 3, f_int(3, _seconds(end)))
+            return msg
+
+        return await self._set_config_message("do_not_disturb", edit)
+
+    async def set_off_peak_charging(
+        self, enabled: bool | None = None, begin: int | None = None, duration: int | None = None
+    ) -> CommandResponse:
+        """Off-peak charging: begin (s from midnight), duration in seconds.
+
+        The robot rejects durations under 3 hours (verified: 1 h and 2 h fail,
+        3 h passes) and an absent duration, so one is always kept.
+        """
+        if duration is not None and not OFF_PEAK_MIN_DURATION <= duration <= 86400:
+            raise ValueError("off-peak duration must be between 3 and 24 hours")
+
+        def edit(msg: bytes) -> bytes:
+            if enabled is not None:
+                msg = replace_field(msg, 1, f_int(1, True) if enabled else None)
+            if begin is not None:
+                msg = replace_field(msg, 2, f_int(2, _seconds(begin)))
+            if duration is not None:
+                msg = replace_field(msg, 3, f_int(3, duration))
+            if not isinstance(first(msg, 3), int):  # robot rejects duration 0
+                msg = replace_field(msg, 3, f_int(3, 6 * 3600))
+            return msg
+
+        return await self._set_config_message("off_peak_charging", edit)
+
+    async def set_corner_frequency(
+        self, frequency: CornerFrequency | int, interval: int | None = None
+    ) -> CommandResponse:
+        """Intensive corner cleaning frequency: off, every N cleans or every N days."""
+
+        def edit(msg: bytes) -> bytes:
+            msg = replace_field(msg, 1, f_int(1, int(frequency)))
+            if interval is not None:
+                msg = replace_field(msg, 2, f_int(2, max(1, interval)))
+            return msg
+
+        return await self._set_config_message("corner_frequency", edit)
+
+    async def set_rewash_strategy(self, strategy: RewashStrategy | int) -> CommandResponse:
+        """Floor cleaning rewash: by area (rewash_area setting) or smart zone-based."""
+        return await self._set_config_message(
+            "clean_strategy", lambda msg: replace_field(msg, 1, f_int(1, int(strategy)))
+        )
+
+    async def set_room_order(self, room_ids: list[int], map_id: int) -> CommandResponse:
+        """Custom room cleaning order for a map (customCleanStrategy.cleanOrders)."""
+        if not room_ids:
+            raise ValueError("room order is empty")
+
+        def edit(msg: bytes) -> bytes:
+            parts = []
+            replaced = False
+            for num, _w, value, raw in iter_fields(msg):
+                if num == 4 and isinstance(value, bytes) and first(value, 4) == map_id:
+                    unit = replace_field(value, 1, f_int(1, True))
+                    unit = replace_field(unit, 2, f_packed(2, room_ids))
+                    parts.append(f_msg(4, unit))
+                    replaced = True
+                else:
+                    parts.append(raw)
+            if not replaced:
+                parts.append(f_msg(4, f_int(1, True) + f_packed(2, room_ids) + f_int(4, map_id)))
+            return b"".join(parts)
+
+        return await self._set_config_message("clean_strategy", edit)
+
+    async def set_no_stairs(self, enabled: bool, map_id: int) -> CommandResponse:
+        """No stairs (boost crossing): global flag plus the per-map mirror the app keeps."""
+        response = await self.send_command(  # type: ignore[attr-defined]
+            TOPIC_CMD_CONFIG_SET, f_int(CONFIG_FIELD_NO_STAIRS_SET, enabled)
+        )
+
+        def edit(msg: bytes) -> bytes:
+            parts = []
+            replaced = False
+            for num, _w, value, raw in iter_fields(msg):
+                if num == 1 and isinstance(value, bytes) and first(value, 1) == map_id:
+                    parts.append(f_msg(1, f_int(1, map_id) + (f_int(2, True) if enabled else b"")))
+                    replaced = True
+                else:
+                    parts.append(raw)
+            if not replaced:
+                parts.append(f_msg(1, f_int(1, map_id) + (f_int(2, True) if enabled else b"")))
+            return b"".join(parts)
+
+        await self._set_config_message("map_configuration", edit)
+        return response
 
     async def set_config(self, name: str, value: int | bool) -> CommandResponse:
         """Write one setting. SetConfig_Request is a oneof: one field per call."""
@@ -556,3 +774,265 @@ class ExtendedCommandsMixin:
     async def set_map_name(self, name: str) -> dict[str, Any]:
         """Rename the map ("" clears it)."""
         return await self.map_operation(f_msg(7, f_bytes(1, name)))
+
+    async def rotate_map(self, angle: int) -> dict[str, Any]:
+        """Display rotation of the map in degrees (0, 90, 180, 270)."""
+        if angle % 90:
+            raise ValueError("rotation must be a multiple of 90")
+        return await self.map_operation(f_msg(5, f_int(1, angle % 360)))
+
+    async def add_carpet(
+        self,
+        polygon: list[tuple[int, int]],
+        option: int = 2,
+        deep_clean: bool = False,
+    ) -> dict[str, Any]:
+        """Draw a carpet (Grid int cells); option = CarpetCleanOption (1 cross .. 4 avoid)."""
+        if len(polygon) < 3:
+            raise ValueError("carpet needs at least 3 points")
+        body = f_int(2, option) + f_int(3, 1)
+        body += b"".join(f_msg(4, grid_point(int(x), int(y))) for x, y in polygon)
+        if deep_clean:
+            body += f_int(7, True)
+        return await self._add_and_report_id(f_msg(6, body), "carpets")
+
+    async def set_carpet_option(self, carpet_id: int, option: int) -> dict[str, Any]:
+        """Change how one carpet is cleaned (CarpetOperation OPERATION_CARPET_CLEAN_OPTION)."""
+        return await self.map_operation(f_msg(6, f_int(1, carpet_id) + f_int(2, option)))
+
+    async def delete_carpet(self, carpet_id: int) -> dict[str, Any]:
+        """Delete a carpet by id."""
+        return await self.map_operation(f_msg(6, f_int(1, carpet_id) + f_int(3, 3)))
+
+    async def add_threshold(
+        self,
+        start: tuple[float, float],
+        end: tuple[float, float],
+        height: int = 20,
+    ) -> dict[str, Any]:
+        """Enhanced obstacle crossing line (float cells); height in mm.
+
+        The robot assigns the id; it is returned as result["id"].
+        """
+        data = f_msg(2, point(*start)) + f_msg(3, point(*end)) + f_int(4, height) + f_int(6, True)
+        return await self._add_and_report_id(f_msg(11, f_int(1, 3) + f_msg(2, data)), "thresholds")
+
+    async def _add_and_report_id(self, operation: bytes, kind: str) -> dict[str, Any]:
+        """Apply an add operation and report the id the robot assigned."""
+        before = {o["id"] for o in decode_map_objects(await self.get_map_raw())[kind]}
+        result = await self.map_operation(operation)
+        if result.get("success"):
+            after = decode_map_objects(await self.get_map_raw())[kind]
+            new_ids = [o["id"] for o in after if o["id"] not in before]
+            result["id"] = new_ids[0] if new_ids else None
+        return result
+
+    async def delete_threshold(self, threshold_id: int) -> dict[str, Any]:
+        """Delete an obstacle crossing line by id."""
+        return await self.map_operation(f_msg(11, f_int(1, 2) + f_msg(2, f_int(1, threshold_id))))
+
+    @staticmethod
+    def furniture_raw(map_raw: bytes, furniture_id: int) -> bytes:
+        """Raw Furniture from map field 32 (visionData) by id."""
+        vision = first(map_raw, 32)
+        for value in all_values(vision if isinstance(vision, bytes) else b"", 1):
+            if isinstance(value, bytes) and first(value, 1) == furniture_id:
+                return value
+        raise KeyError(furniture_id)
+
+    async def update_furniture(
+        self,
+        furniture_id: int,
+        *,
+        x: float | None = None,
+        y: float | None = None,
+        angle: float | None = None,
+    ) -> dict[str, Any]:
+        """Move or rotate a furniture item (centre in float cells, angle in degrees)."""
+        item = self.furniture_raw(await self.get_map_raw(), furniture_id)
+        if x is not None or y is not None:
+            box = first(item, 3)
+            box = box if isinstance(box, bytes) else b""
+            centre = first(box, 1)
+            centre = centre if isinstance(centre, bytes) else b""
+            cx = x if x is not None else as_float(first(centre, 1)) or 0.0
+            cy = y if y is not None else as_float(first(centre, 2)) or 0.0
+            box = replace_field(box, 1, f_msg(1, point(cx, cy)))
+            item = replace_field(item, 3, f_msg(3, box))
+        if angle is not None:
+            item = replace_field(item, 4, f_float(4, angle))
+        return await self.map_operation(f_msg(8, f_int(1, 1) + f_msg(2, item)))
+
+    async def delete_furniture(self, furniture_id: int) -> dict[str, Any]:
+        """Remove a furniture item from the map."""
+        item = self.furniture_raw(await self.get_map_raw(), furniture_id)
+        return await self.map_operation(f_msg(8, f_int(1, 2) + f_msg(2, item)))
+
+    async def add_furniture(self, furniture: bytes) -> dict[str, Any]:
+        """Add (or restore) a furniture item from its raw Furniture message."""
+        return await self.map_operation(f_msg(8, f_int(1, 1) + f_msg(2, furniture)))
+
+    async def split_room(
+        self,
+        room_id: int,
+        start: tuple[float, float],
+        end: tuple[float, float],
+        new_room_id: int | None = None,
+    ) -> dict[str, Any]:
+        """Split a room along a line (float cells), as the app's room editor does.
+
+        RoomSegOperation{startSegPoint, endSegPoint, leftRoomId = room_id,
+        rightRoomId = new id (max room id + 1 unless given)}. Not exercised on a
+        live map: it changes room ids that tasks and Home Assistant areas use.
+        """
+        if new_room_id is None:
+            ids = [
+                int(first(v, 1) or 0)
+                for v in all_values(await self.get_map_raw(), 12)
+                if isinstance(v, bytes)
+            ]
+            new_room_id = max(ids, default=0) + 1
+        body = (
+            f_msg(1, point(*start))
+            + f_msg(2, point(*end))
+            + f_int(3, room_id)
+            + f_int(4, new_room_id)
+        )
+        result = await self.map_operation(f_msg(1, body))
+        result["new_room_id"] = new_room_id
+        return result
+
+    async def merge_rooms(
+        self, room_a: int, room_b: int, keep: int | None = None
+    ) -> dict[str, Any]:
+        """Merge two adjacent rooms; keep is the surviving id (room_a by default).
+
+        Same format as the app; not exercised on a live map (changes room ids).
+        """
+        keep = room_a if keep is None else keep
+        if keep not in (room_a, room_b):
+            raise ValueError("keep must be one of the merged rooms")
+        body = f_int(1, room_a) + f_int(2, room_b) + f_int(3, keep)
+        return await self.map_operation(f_msg(2, body))
+
+    # --- maps and tasks ---
+
+    async def list_maps(self) -> list[dict[str, Any]]:
+        """Saved maps (map/get_all_reduced_maps): id, name, main flag, rooms."""
+        resp = await self.send_command("map/get_all_reduced_maps", timeout=15.0)  # type: ignore[attr-defined]
+        maps = []
+        for value in all_values(resp.raw_payload, 2):
+            if not isinstance(value, bytes):
+                continue
+            name = first(value, 28)
+            maps.append(
+                {
+                    "map_id": first(value, 1),
+                    "name": name.decode(errors="replace") if isinstance(name, bytes) else "",
+                    "is_main": bool(first(value, 30)),
+                    "rooms": len(all_values(value, 12)),
+                }
+            )
+        return maps
+
+    async def switch_map(self, map_id: int) -> CommandResponse:
+        """Make another saved map active."""
+        return await self.send_command("map/switch_map", f_int(1, map_id), timeout=15.0)  # type: ignore[attr-defined]
+
+    async def delete_map(self, map_id: int) -> CommandResponse:
+        """Delete a saved map (irreversible)."""
+        return await self.send_command("map/delete_map", f_int(1, map_id), timeout=15.0)  # type: ignore[attr-defined]
+
+    async def start_mapping(self, rebuild_current: bool = False) -> CommandResponse:
+        """Start a mapping run: new main map, or rebuild the current one."""
+        payload = f_int(1, 1) + (f_int(4, True) if rebuild_current else b"")
+        return await self.send_command("map/build_map/start", payload, timeout=15.0)  # type: ignore[attr-defined]
+
+    async def get_continue_task(self) -> dict[str, Any]:
+        """Interrupted task the robot can resume, if any."""
+        resp = await self.send_command("task/get_continue_task")  # type: ignore[attr-defined]
+        raw = resp.raw_payload
+        return {
+            "available": first(raw, 6) is not None,
+            "task_type": first(raw, 4),
+            "stopped_at": first(raw, 5),
+            "finished_rooms": [v for v in all_values(raw, 9) if isinstance(v, int)],
+        }
+
+    async def continue_task(self) -> CommandResponse:
+        """Resume the interrupted task."""
+        return await self.send_command("task/continue_task", f_int(1, True))  # type: ignore[attr-defined]
+
+    async def check_firmware(self) -> int | None:
+        """Firmware update status (CheckFirmware FirmwareStatus enum)."""
+        resp = await self.send_command("common/upgrade/check_firmware", timeout=15.0)  # type: ignore[attr-defined]
+        value = first(resp.raw_payload, 1)
+        return int(value) if isinstance(value, int) else None
+
+
+def decode_map_objects(map_raw: bytes) -> dict[str, list[dict[str, Any]]]:
+    """No-go zones, carpets, thresholds, rooms and furniture of a map payload."""
+    zones = []
+    for value in all_values(map_raw, 9):
+        if isinstance(value, bytes):
+            pts = [
+                (as_float(first(p, 1)), as_float(first(p, 2)))
+                for p in all_values(value, 1)
+                if isinstance(p, bytes)
+            ]
+            zones.append(
+                {
+                    "id": first(value, 3),
+                    "type": first(value, 2),
+                    "room_id": first(value, 4),
+                    "polygon": pts,
+                }
+            )
+    carpets = []
+    for value in all_values(map_raw, 26):
+        if isinstance(value, bytes):
+            carpets.append(
+                {
+                    "id": first(value, 1),
+                    "option": first(value, 4),
+                    "source": first(value, 5),
+                    "room_id": first(value, 12),
+                }
+            )
+    thresholds = []
+    for value in all_values(map_raw, 41):
+        if isinstance(value, bytes):
+            s, e = first(value, 2), first(value, 3)
+            thresholds.append(
+                {
+                    "id": first(value, 1),
+                    "start": (
+                        (as_float(first(s, 1)), as_float(first(s, 2)))
+                        if isinstance(s, bytes)
+                        else None
+                    ),
+                    "end": (
+                        (as_float(first(e, 1)), as_float(first(e, 2)))
+                        if isinstance(e, bytes)
+                        else None
+                    ),
+                    "height": first(value, 4),
+                }
+            )
+    furniture = []
+    vision = first(map_raw, 32)
+    for value in all_values(vision if isinstance(vision, bytes) else b"", 1):
+        if isinstance(value, bytes):
+            furniture.append(
+                {
+                    "id": as_signed(first(value, 1)),
+                    "type": first(value, 2),
+                    "angle": as_float(first(value, 4)),
+                }
+            )
+    return {
+        "no_go_zones": zones,
+        "carpets": carpets,
+        "thresholds": thresholds,
+        "furniture": furniture,
+    }

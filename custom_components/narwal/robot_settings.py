@@ -16,7 +16,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .narwal_client.extended import FreoStrategy
+from .narwal_client.extended import FreoStrategy, decode_map_objects
 
 if TYPE_CHECKING:
     from .coordinator import NarwalCoordinator
@@ -36,6 +36,10 @@ class RobotSettingsData:
     language: int | None = None
     supported_languages: list[int] = field(default_factory=list)
     battery: dict[str, Any] = field(default_factory=dict)
+    map_objects: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    maps: list[dict[str, Any]] = field(default_factory=list)
+    continue_task: dict[str, Any] = field(default_factory=dict)
+    firmware_status: int | None = None
 
 
 class NarwalRobotSettings(DataUpdateCoordinator[RobotSettingsData]):
@@ -74,6 +78,10 @@ class NarwalRobotSettings(DataUpdateCoordinator[RobotSettingsData]):
             if not data.supported_languages:
                 data.supported_languages = await client.get_supported_languages()
             data.battery = await client.get_battery_info()
+            data.map_objects = decode_map_objects(await client.get_map_raw())
+            data.maps = await client.list_maps()
+            data.continue_task = await client.get_continue_task()
+            data.firmware_status = await client.check_firmware()
         except Exception as err:  # noqa: BLE001 - keep last values on any read error
             if self._last.config:
                 _LOGGER.debug("Narwal settings refresh failed, keeping last values: %s", err)
@@ -115,6 +123,29 @@ class NarwalRobotSettings(DataUpdateCoordinator[RobotSettingsData]):
             self.data.freo[strategy] = value
             self.async_set_updated_data(self.data)
         await self.async_request_refresh()
+
+    async def async_call(self, what: str, call: Any) -> Any:
+        """Run a client coroutine factory after waking the robot, then refresh."""
+        await self._ensure_awake()
+        result = await call()
+        if isinstance(result, dict) and "success" in result and not result["success"]:
+            raise HomeAssistantError(f"Narwal rejected {what}: {result}")
+        if hasattr(result, "data"):
+            self._check(result, what)
+        await self.async_request_refresh()
+        return result
+
+    @property
+    def map_id(self) -> int:
+        """Active map id."""
+        map_data = self.client.state.map_data
+        if map_data and map_data.map_id:
+            return map_data.map_id
+        maps = self.data.maps if self.data else []
+        main = next((m for m in maps if m.get("is_main")), None)
+        if main and main.get("map_id"):
+            return int(main["map_id"])
+        raise HomeAssistantError("Narwal map not loaded yet")
 
     async def async_set_language(self, language: int) -> None:
         """Switch the voice language (verified by reading back)."""

@@ -96,6 +96,9 @@
       },
       "battery_capacity": {
         "name": "Battery capacity"
+      },
+      "map_objects": {
+        "name": "Map objects"
       }
     },
     "binary_sensor": {
@@ -133,6 +136,9 @@
       },
       "replacement_required": {
         "name": "Replacement required"
+      },
+      "firmware_update_ready": {
+        "name": "Firmware update ready"
       }
     },
     "select": {
@@ -320,6 +326,21 @@
           "th": "Thai",
           "vi": "Vietnamese"
         }
+      },
+      "corner_frequency": {
+        "name": "Corner cleaning frequency",
+        "state": {
+          "off": "Off",
+          "every_n_cleans": "Every N cleans",
+          "every_n_days": "Every N days"
+        }
+      },
+      "rewash_strategy": {
+        "name": "Rewash strategy",
+        "state": {
+          "by_area": "By area",
+          "smart": "Smart zone-based"
+        }
       }
     },
     "number": {
@@ -328,6 +349,12 @@
       },
       "volume": {
         "name": "Voice volume"
+      },
+      "off_peak_charging_hours": {
+        "name": "Off-peak charging duration"
+      },
+      "corner_interval": {
+        "name": "Corner cleaning interval"
       }
     },
     "light": {
@@ -422,6 +449,15 @@
       },
       "precious_item_guard": {
         "name": "Precious item guard"
+      },
+      "do_not_disturb": {
+        "name": "Do not disturb"
+      },
+      "off_peak_charging": {
+        "name": "Off-peak charging"
+      },
+      "no_stairs": {
+        "name": "No stairs"
       }
     },
     "button": {
@@ -430,6 +466,20 @@
       },
       "stop_remote_control": {
         "name": "End remote control"
+      },
+      "continue_task": {
+        "name": "Continue interrupted task"
+      }
+    },
+    "time": {
+      "do_not_disturb_start": {
+        "name": "Do not disturb start"
+      },
+      "do_not_disturb_end": {
+        "name": "Do not disturb end"
+      },
+      "off_peak_charging_start": {
+        "name": "Off-peak charging start"
       }
     }
   }

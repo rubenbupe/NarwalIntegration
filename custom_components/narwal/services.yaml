@@ -367,3 +367,298 @@ set_map_name:
       required: true
       selector:
         text:
+
+set_room_order:
+  name: Set room order
+  description: Custom cleaning order for the active map (room ids, names or areas, first to last).
+  target:
+    entity:
+      integration: narwal
+      domain: vacuum
+  fields:
+    order:
+      name: Room order
+      required: true
+      selector:
+        object:
+
+add_carpet:
+  name: Add carpet
+  description: Draw a carpet polygon in map grid cells. Returns the carpet id the robot assigned.
+  target:
+    entity:
+      integration: narwal
+      domain: vacuum
+  fields:
+    polygon:
+      name: Polygon
+      required: true
+      example: "[[58, 24], [74, 24], [74, 40], [58, 40]]"
+      selector:
+        object:
+    mode:
+      name: Mode
+      default: clean
+      selector:
+        select:
+          options: [cross, clean, vacuum_and_mop, avoid]
+    deep_clean:
+      name: CarpetFocus deep clean
+      default: false
+      selector:
+        boolean:
+
+set_carpet_mode:
+  name: Set carpet mode
+  description: Change how one carpet is cleaned (ids are in the Map objects sensor).
+  target:
+    entity:
+      integration: narwal
+      domain: vacuum
+  fields:
+    carpet_id:
+      name: Carpet id
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100000
+          mode: box
+    mode:
+      name: Mode
+      required: true
+      selector:
+        select:
+          options: [cross, clean, vacuum_and_mop, avoid]
+
+delete_carpet:
+  name: Delete carpet
+  target:
+    entity:
+      integration: narwal
+      domain: vacuum
+  fields:
+    carpet_id:
+      name: Carpet id
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100000
+          mode: box
+
+add_threshold:
+  name: Add obstacle crossing line
+  description: Enhanced obstacle crossing (threshold) line between two map points in grid cells. Returns its id.
+  target:
+    entity:
+      integration: narwal
+      domain: vacuum
+  fields:
+    start:
+      name: Start
+      required: true
+      example: "[58, 24]"
+      selector:
+        object:
+    end:
+      name: End
+      required: true
+      example: "[68, 24]"
+      selector:
+        object:
+    height:
+      name: Height (mm)
+      default: 20
+      selector:
+        number:
+          min: 1
+          max: 60
+
+delete_threshold:
+  name: Delete obstacle crossing line
+  target:
+    entity:
+      integration: narwal
+      domain: vacuum
+  fields:
+    threshold_id:
+      name: Line id
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100000
+          mode: box
+
+update_furniture:
+  name: Move furniture
+  description: Move (centre in grid cells) or rotate (degrees) a furniture item on the map.
+  target:
+    entity:
+      integration: narwal
+      domain: vacuum
+  fields:
+    furniture_id:
+      name: Furniture id
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100000
+          mode: box
+    x:
+      name: X
+      selector:
+        number:
+          min: -2000
+          max: 2000
+          step: 0.1
+          mode: box
+    y:
+      name: Y
+      selector:
+        number:
+          min: -2000
+          max: 2000
+          step: 0.1
+          mode: box
+    angle:
+      name: Angle
+      selector:
+        number:
+          min: 0
+          max: 360
+          mode: box
+
+delete_furniture:
+  name: Delete furniture
+  target:
+    entity:
+      integration: narwal
+      domain: vacuum
+  fields:
+    furniture_id:
+      name: Furniture id
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100000
+          mode: box
+
+rotate_map:
+  name: Rotate map
+  target:
+    entity:
+      integration: narwal
+      domain: vacuum
+  fields:
+    angle:
+      name: Angle
+      required: true
+      selector:
+        select:
+          options: ["0", "90", "180", "270"]
+
+split_room:
+  name: Split room
+  description: Split a room along a line (grid cells). Creates a new room id, so update room-based automations and areas afterwards.
+  target:
+    entity:
+      integration: narwal
+      domain: vacuum
+  fields:
+    room:
+      name: Room
+      required: true
+      selector:
+        text:
+    start:
+      name: Line start
+      required: true
+      selector:
+        object:
+    end:
+      name: Line end
+      required: true
+      selector:
+        object:
+
+merge_rooms:
+  name: Merge rooms
+  description: Merge two adjacent rooms (the first keeps its id). Update room-based automations and areas afterwards.
+  target:
+    entity:
+      integration: narwal
+      domain: vacuum
+  fields:
+    room_a:
+      name: Room kept
+      required: true
+      selector:
+        text:
+    room_b:
+      name: Room merged in
+      required: true
+      selector:
+        text:
+
+switch_map:
+  name: Switch map
+  target:
+    entity:
+      integration: narwal
+      domain: vacuum
+  fields:
+    map_id:
+      name: Map id
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100000
+          mode: box
+
+delete_map:
+  name: Delete map
+  description: Permanently delete a saved map.
+  target:
+    entity:
+      integration: narwal
+      domain: vacuum
+  fields:
+    map_id:
+      name: Map id
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100000
+          mode: box
+    confirm:
+      name: Confirm deletion
+      required: true
+      selector:
+        boolean:
+
+start_mapping:
+  name: Start mapping
+  description: Start a mapping run (new map, or rebuild the current one). The robot leaves the dock.
+  target:
+    entity:
+      integration: narwal
+      domain: vacuum
+  fields:
+    rebuild_current:
+      name: Rebuild current map
+      default: false
+      selector:
+        boolean:
+
+continue_task:
+  name: Continue interrupted task
+  target:
+    entity:
+      integration: narwal
+      domain: vacuum

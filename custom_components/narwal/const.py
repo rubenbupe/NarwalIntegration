@@ -102,6 +102,7 @@ PLATFORMS: list[Platform] = [
     Platform.SWITCH,
     Platform.LIGHT,
     Platform.BUTTON,
+    Platform.TIME,
 ]
 
 CONF_SHOW_ROOM_LABELS = "show_room_labels"

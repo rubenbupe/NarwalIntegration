@@ -458,6 +458,13 @@ def install() -> None:
 
     ha_button.ButtonEntity = _ButtonEntity  # type: ignore[attr-defined]
 
+    ha_time = _mod("homeassistant.components.time", ha_comp)
+
+    class _TimeEntity:
+        """Stub for TimeEntity base class."""
+
+    ha_time.TimeEntity = _TimeEntity  # type: ignore[attr-defined]
+
     ha_sensor = _mod("homeassistant.components.sensor", ha_comp)
 
     class _SensorEntity:

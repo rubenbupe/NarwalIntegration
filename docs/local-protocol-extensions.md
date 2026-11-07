@@ -18,11 +18,27 @@ local WebSocket, using formats taken from the Narwal app's protobuf definitions.
 Settings the official app hides are created disabled. Settings poll every 10 minutes and
 refresh right after each write.
 
+## Schedules, map management and maps
+
+| Platform | Entities |
+|---|---|
+| switch | Do not disturb, Off-peak charging, No stairs (writes the global flag and the per-map mirror) |
+| time | Do not disturb start / end, Off-peak charging start |
+| number | Off-peak charging duration (3–24 h; the robot rejects under 3 h), Corner cleaning interval |
+| select | Corner cleaning frequency (off / every N cleans / every N days), Rewash strategy (by area / smart) |
+| sensor | Map objects: no-go zones, carpets, thresholds, furniture, room order and saved maps as attributes (ids for the services) |
+| binary_sensor | Firmware update ready (`common/upgrade/check_firmware` = DOWNLOADED) |
+| button | Continue interrupted task |
+
 ## New services
 
 `clean_rooms` gains `freo: true` (Freo Mind with the stored preset); new: `clean_zone`, `go_to_point`, `remote_move`, `play_pet_voice`,
 `get_pet_voices` (response), `reset_consumables`, `add_no_go_zone`, `add_room_ban`,
-`remove_no_go_zone`, `update_room` (name, floor material, heavily-soiled flag), `set_map_name`.
+`remove_no_go_zone`, `update_room` (name, floor material, heavily-soiled flag), `set_map_name`,
+`set_room_order`, `add_carpet` / `set_carpet_mode` / `delete_carpet`, `add_threshold` /
+`delete_threshold` (ids are assigned by the robot and returned), `update_furniture` /
+`delete_furniture`, `rotate_map`, `split_room` / `merge_rooms` (app format, not exercised on a
+live map), `switch_map`, `delete_map` (needs confirm), `start_mapping`, `continue_task`.
 
 ## Protocol facts the code depends on
 
@@ -45,7 +61,6 @@ refresh right after each write.
 - Map edits (`map/operation`) need the current `editVersion`; on
   `ERROR_CODE_UNMATCHED_EDIT_VERSION` the reply carries it and the call is retried once.
   No-go polygons use float32 cells (int points are rejected); zone-clean bounds use int32 cells.
-- Not implemented on purpose: room split/merge (changes room ids), No stairs (safety prompt in
-  the app), custom button mappings (can disable the physical buttons), video/microphone/photos
+- Not implemented on purpose: custom button mappings (can disable the physical buttons), video/microphone/photos
   (Narwal cloud + Agora; `developer/take_picture` returns an AES-encrypted image whose key comes
   from the cloud).

@@ -24,6 +24,7 @@ from .const import (
 from .coordinator import NarwalCoordinator
 from .entity import NarwalDockEntity, NarwalEntity
 from .narwal_client import NarwalState
+from .robot_settings_entities import robot_settings_for, settings_binary_sensors
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -51,9 +52,11 @@ def _tank_problem(attr: str, bad: frozenset[int]) -> Callable[[NarwalState], boo
     The state attr is None when this model doesn't report that field, which
     keeps the entity unavailable rather than asserting "OK".
     """
+
     def fn(state: NarwalState) -> bool | None:
         value = getattr(state, attr)
         return None if value is None else value in bad
+
     return fn
 
 
@@ -69,15 +72,20 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[NarwalBinarySensorEntityDescription, ...] = (
         # base_status field 1 errorCode: empty when healthy, populated on a fault.
         value_fn=lambda s: s.has_error if s.raw_base_status else None,
         # Expose the fault detail (numeric code(s), severity, debug string, help link) when present.
-        attrs_fn=lambda s: {
-            "codes": s.error_codes,
-            "level": s.error_level,
-            "detail": s.error_detail,
-            **(
-                {"help_url": ERROR_HELP_URL_TEMPLATE.format(code=s.error_codes[0])}
-                if s.error_codes else {}
-            ),
-        } if s.raw_base_status else None,
+        attrs_fn=lambda s: (
+            {
+                "codes": s.error_codes,
+                "level": s.error_level,
+                "detail": s.error_detail,
+                **(
+                    {"help_url": ERROR_HELP_URL_TEMPLATE.format(code=s.error_codes[0])}
+                    if s.error_codes
+                    else {}
+                ),
+            }
+            if s.raw_base_status
+            else None
+        ),
     ),
     NarwalBinarySensorEntityDescription(
         key="maintenance_required",
@@ -88,13 +96,17 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[NarwalBinarySensorEntityDescription, ...] = (
         # Only ids in the enum raise a problem: some firmware answers this topic with
         # a payload that is not an id list at all, and an unrecognised value is not
         # evidence of a fault. Unknown ids stay visible for diagnosis.
-        value_fn=lambda s: bool(_named(s.maintain_items, CONSUMABLE_MAINTAIN_ITEMS))
-        if s.raw_base_status
-        else None,
-        attrs_fn=lambda s: {
-            "items": _named(s.maintain_items, CONSUMABLE_MAINTAIN_ITEMS),
-            "unknown_ids": _unnamed(s.maintain_items, CONSUMABLE_MAINTAIN_ITEMS),
-        } if s.raw_base_status else None,
+        value_fn=lambda s: (
+            bool(_named(s.maintain_items, CONSUMABLE_MAINTAIN_ITEMS)) if s.raw_base_status else None
+        ),
+        attrs_fn=lambda s: (
+            {
+                "items": _named(s.maintain_items, CONSUMABLE_MAINTAIN_ITEMS),
+                "unknown_ids": _unnamed(s.maintain_items, CONSUMABLE_MAINTAIN_ITEMS),
+            }
+            if s.raw_base_status
+            else None
+        ),
     ),
     NarwalBinarySensorEntityDescription(
         key="replacement_required",
@@ -103,13 +115,17 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[NarwalBinarySensorEntityDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         # consumable/get_consumable_info replaceItems (replace these parts).
         # Same id filtering as maintenance_required above.
-        value_fn=lambda s: bool(_named(s.replace_items, CONSUMABLE_REPLACE_ITEMS))
-        if s.raw_base_status
-        else None,
-        attrs_fn=lambda s: {
-            "items": _named(s.replace_items, CONSUMABLE_REPLACE_ITEMS),
-            "unknown_ids": _unnamed(s.replace_items, CONSUMABLE_REPLACE_ITEMS),
-        } if s.raw_base_status else None,
+        value_fn=lambda s: (
+            bool(_named(s.replace_items, CONSUMABLE_REPLACE_ITEMS)) if s.raw_base_status else None
+        ),
+        attrs_fn=lambda s: (
+            {
+                "items": _named(s.replace_items, CONSUMABLE_REPLACE_ITEMS),
+                "unknown_ids": _unnamed(s.replace_items, CONSUMABLE_REPLACE_ITEMS),
+            }
+            if s.raw_base_status
+            else None
+        ),
     ),
     NarwalBinarySensorEntityDescription(
         key="clean_water_tank",
@@ -170,6 +186,8 @@ async def async_setup_entry(
         )
         for description in BINARY_SENSOR_DESCRIPTIONS
     ]
+    if (settings := robot_settings_for(coordinator)) is not None:
+        entities.extend(settings_binary_sensors(settings))
     async_add_entities(entities)
 
 

@@ -214,3 +214,110 @@ def test_language_set_is_confirmed_by_read_back() -> None:
     import asyncio
 
     assert asyncio.run(client.set_language(3)) is True
+
+
+def _config_reply(config: bytes) -> bytes:
+    return pb.f_msg(2, config)
+
+
+def test_decode_config_messages() -> None:
+    from narwal_client.extended import decode_config_messages
+
+    order = pb.f_int(1, 1) + pb.f_packed(2, [8, 9, 4]) + pb.f_packed(3, [2, 1]) + pb.f_int(4, 1)
+    config = (
+        pb.f_msg(4, pb.f_int(2, 79200) + pb.f_int(3, 28800))
+        + pb.f_int(10, 1)
+        + pb.f_msg(14, pb.f_int(1, 3) + pb.f_int(2, 7))
+        + pb.f_msg(18, pb.f_int(1, 1) + pb.f_int(2, 2) + pb.f_msg(4, order))
+        + pb.f_msg(38, pb.f_int(3, 21600))
+        + pb.f_msg(44, pb.f_msg(1, pb.f_int(1, 1) + pb.f_int(2, 1)))
+    )
+    values = decode_config_messages(config)
+    assert values["do_not_disturb"] == {"enabled": False, "begin": 79200, "end": 28800}
+    assert values["off_peak_charging"]["duration"] == 21600
+    assert values["corner_frequency"] == {"frequency": 3, "interval": 7}
+    assert values["rewash_strategy"] == 1
+    assert values["room_orders"][1]["order"] == [8, 9, 4]
+    assert values["no_stairs"] is True and values["no_stairs_maps"] == {1: True}
+
+
+def test_dnd_edit_keeps_other_fields() -> None:
+    import asyncio
+
+    config = pb.f_msg(4, pb.f_int(2, 79200) + pb.f_int(3, 28800))
+    client = FakeClient([_config_reply(config)])
+    asyncio.run(client.set_do_not_disturb(enabled=True))
+    topic, payload = client.sent[-1]
+    body = pb.first(payload, 5)  # Set field 5 (Get 4)
+    assert topic == "config/set"
+    assert pb.first(body, 1) == 1 and pb.first(body, 2) == 79200 and pb.first(body, 3) == 28800
+
+
+def test_off_peak_minimum_duration() -> None:
+    import asyncio
+
+    client = FakeClient()
+    with pytest.raises(ValueError):
+        asyncio.run(client.set_off_peak_charging(duration=7200))
+
+
+def test_room_order_replaces_only_its_map() -> None:
+    import asyncio
+
+    other = pb.f_int(1, 1) + pb.f_packed(2, [1]) + pb.f_int(4, 2)
+    mine = pb.f_int(1, 1) + pb.f_packed(2, [8, 9]) + pb.f_int(4, 1)
+    strategy = pb.f_int(1, 1) + pb.f_msg(4, mine) + pb.f_msg(4, other)
+    client = FakeClient([_config_reply(pb.f_msg(18, strategy))])
+    asyncio.run(client.set_room_order([9, 8, 3], map_id=1))
+    body = pb.first(client.sent[-1][1], 18)
+    units = pb.all_values(body, 4)
+    assert len(units) == 2
+    assert pb.first(units[0], 2) == bytes([9, 8, 3])
+    assert units[1] == other
+    assert pb.first(body, 1) == 1  # strategy untouched
+
+
+def test_no_stairs_writes_flag_and_map_mirror() -> None:
+    import asyncio
+
+    mirror = pb.f_msg(1, pb.f_int(1, 1) + pb.f_int(2, 1))
+    client = FakeClient([pb.f_int(1, 1), _config_reply(pb.f_msg(44, mirror))])
+    asyncio.run(client.set_no_stairs(False, map_id=1))
+    assert client.sent[0] == ("config/set", pb.f_int(11, 0))
+    unit = pb.first(pb.first(client.sent[-1][1], 44), 1)
+    assert pb.first(unit, 1) == 1 and pb.first(unit, 2) is None
+
+
+def test_add_threshold_reports_robot_id() -> None:
+    import asyncio
+
+    rev = pb.f_int(1, 1) + pb.f_int(2, 1) + pb.f_int(33, 1)
+    line = pb.f_int(1, 1) + pb.f_msg(2, pb.point(1, 2)) + pb.f_msg(3, pb.point(3, 4))
+    client = FakeClient(
+        [pb.f_msg(2, rev), pb.f_msg(2, rev), pb.f_int(1, 1), pb.f_msg(2, rev + pb.f_msg(41, line))]
+    )
+    result = asyncio.run(client.add_threshold((1, 2), (3, 4)))
+    assert result["success"] and result["id"] == 1
+
+
+def test_split_and_merge_payloads() -> None:
+    import asyncio
+
+    rev = pb.f_int(1, 1) + pb.f_int(2, 1) + pb.f_int(33, 1)
+    rooms = pb.f_msg(12, pb.f_int(1, 4)) + pb.f_msg(12, pb.f_int(1, 9))
+    client = FakeClient([pb.f_msg(2, rev + rooms), pb.f_msg(2, rev), pb.f_int(1, 1)])
+    result = asyncio.run(client.split_room(4, (1.0, 2.0), (3.0, 4.0)))
+    seg = pb.first(pb.first(client.sent[-1][1], 4), 1)
+    assert pb.first(seg, 3) == 4 and pb.first(seg, 4) == 10 and result["new_room_id"] == 10
+
+    client = FakeClient([pb.f_msg(2, rev), pb.f_int(1, 1)])
+    asyncio.run(client.merge_rooms(4, 9))
+    merge = pb.first(pb.first(client.sent[-1][1], 4), 2)
+    assert (pb.first(merge, 1), pb.first(merge, 2), pb.first(merge, 3)) == (4, 9, 4)
+
+
+def test_rotate_map_rejects_odd_angles() -> None:
+    import asyncio
+
+    with pytest.raises(ValueError):
+        asyncio.run(FakeClient().rotate_map(45))
