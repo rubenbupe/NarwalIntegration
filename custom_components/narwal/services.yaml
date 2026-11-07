@@ -66,21 +66,12 @@ clean_rooms:
           options:
             - standard
             - meticulous
-
-clean_rooms_freo:
-  name: Clean rooms with Freo Mind
-  description: Start a Freo Mind clean of the given rooms. The robot uses its stored Freo preset (see the Freo selects).
-  target:
-    entity:
-      integration: narwal
-      domain: vacuum
-  fields:
-    rooms:
-      name: Rooms
-      description: Narwal room IDs, names or areas, or "all".
-      required: true
+    freo:
+      name: Freo Mind
+      description: Start a Freo Mind clean; the robot uses its stored Freo preset.
+      default: false
       selector:
-        object:
+        boolean:
 
 clean_zone:
   name: Clean zone

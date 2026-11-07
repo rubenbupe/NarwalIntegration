@@ -37,6 +37,11 @@ def install() -> None:
     vol.Optional = MagicMock(side_effect=lambda *a, **kw: a[0] if a else "key")  # type: ignore[attr-defined]
     vol.In = MagicMock()  # type: ignore[attr-defined]
     vol.Invalid = type("Invalid", (Exception,), {})  # type: ignore[attr-defined]
+    vol.All = MagicMock()  # type: ignore[attr-defined]
+    vol.Coerce = MagicMock()  # type: ignore[attr-defined]
+    vol.Range = MagicMock()  # type: ignore[attr-defined]
+    vol.Length = MagicMock()  # type: ignore[attr-defined]
+    vol.ExactSequence = MagicMock()  # type: ignore[attr-defined]
 
     # --- homeassistant ---
     ha = _mod("homeassistant")
@@ -67,6 +72,11 @@ def install() -> None:
     ha_const.UnitOfArea = _UnitOfArea  # type: ignore[attr-defined]
     ha_const.UnitOfTime = _UnitOfTime  # type: ignore[attr-defined]
 
+    class _UnitOfTemperature:
+        CELSIUS = "°C"
+
+    ha_const.UnitOfTemperature = _UnitOfTemperature  # type: ignore[attr-defined]
+
     class _EntityCategory:
         CONFIG = "config"
         DIAGNOSTIC = "diagnostic"
@@ -79,6 +89,13 @@ def install() -> None:
     ha_core.ServiceCall = MagicMock  # type: ignore[attr-defined]
     ha_core.State = MagicMock  # type: ignore[attr-defined]
     ha_core.callback = lambda f: f  # type: ignore[attr-defined]
+
+    class _SupportsResponse:
+        NONE = "none"
+        OPTIONAL = "optional"
+        ONLY = "only"
+
+    ha_core.SupportsResponse = _SupportsResponse  # type: ignore[attr-defined]
 
     ha_util = _mod("homeassistant.util", ha)
     ha_util.slugify = lambda value: str(value).lower().replace(" ", "_")  # type: ignore[attr-defined]
@@ -128,6 +145,8 @@ def install() -> None:
     ha_cv.comp_entity_ids = MagicMock()  # type: ignore[attr-defined]
     ha_cv.entity_ids = MagicMock()  # type: ignore[attr-defined]
     ha_cv.ensure_list = MagicMock()  # type: ignore[attr-defined]
+    ha_cv.boolean = MagicMock()  # type: ignore[attr-defined]
+    ha_cv.string = MagicMock()  # type: ignore[attr-defined]
     ha_cv.config_entry_only_config_schema = MagicMock()  # type: ignore[attr-defined]
 
     # NOTE: deliberately does NOT expose EntityCategory. Real HA removed
@@ -424,6 +443,21 @@ def install() -> None:
 
     ha_number.RestoreNumber = _RestoreNumber  # type: ignore[attr-defined]
 
+    class _NumberEntity:
+        """Stub for NumberEntity base class."""
+
+        def async_write_ha_state(self) -> None:
+            pass
+
+    ha_number.NumberEntity = _NumberEntity  # type: ignore[attr-defined]
+
+    ha_button = _mod("homeassistant.components.button", ha_comp)
+
+    class _ButtonEntity:
+        """Stub for ButtonEntity base class."""
+
+    ha_button.ButtonEntity = _ButtonEntity  # type: ignore[attr-defined]
+
     ha_sensor = _mod("homeassistant.components.sensor", ha_comp)
 
     class _SensorEntity:
@@ -438,9 +472,11 @@ def install() -> None:
         BATTERY = "battery"
         DURATION = "duration"
         ENUM = "enum"
+        TEMPERATURE = "temperature"
 
     class _SensorStateClass:
         MEASUREMENT = "measurement"
+        TOTAL_INCREASING = "total_increasing"
 
     ha_sensor.SensorDeviceClass = _SensorDeviceClass  # type: ignore[attr-defined]
     ha_sensor.SensorStateClass = _SensorStateClass  # type: ignore[attr-defined]

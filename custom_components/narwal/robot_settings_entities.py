@@ -254,7 +254,9 @@ class BatterySensorSpec:
 BATTERY_SENSORS = (
     BatterySensorSpec("battery_health", PERCENTAGE, None),
     BatterySensorSpec("battery_cycles", None, None, SensorStateClass.TOTAL_INCREASING),
-    BatterySensorSpec("battery_temperature", UnitOfTemperature.CELSIUS, SensorDeviceClass.TEMPERATURE),
+    BatterySensorSpec(
+        "battery_temperature", UnitOfTemperature.CELSIUS, SensorDeviceClass.TEMPERATURE
+    ),
     BatterySensorSpec("battery_capacity", "mAh", None),
 )
 BATTERY_FIELDS = {
@@ -311,6 +313,12 @@ class NarwalActionButton(CoordinatorEntity[NarwalRobotSettings], ButtonEntity):
         NarwalRobotSettings._check(response, self._key)
 
 
+def robot_settings_for(coordinator: object) -> NarwalRobotSettings | None:
+    """The settings coordinator attached at setup, if any."""
+    settings = getattr(coordinator, "robot_settings", None)
+    return settings if isinstance(settings, NarwalRobotSettings) else None
+
+
 def settings_switches(settings: NarwalRobotSettings) -> list[NarwalSettingSwitch]:
     return [
         NarwalSettingSwitch(settings, name)
@@ -320,9 +328,7 @@ def settings_switches(settings: NarwalRobotSettings) -> list[NarwalSettingSwitch
 
 
 def settings_selects(settings: NarwalRobotSettings) -> list[SelectEntity]:
-    entities: list[SelectEntity] = [
-        NarwalSettingSelect(settings, name) for name in ENUM_OPTIONS
-    ]
+    entities: list[SelectEntity] = [NarwalSettingSelect(settings, name) for name in ENUM_OPTIONS]
     entities += [NarwalFreoSelect(settings, strategy) for strategy in FreoStrategy]
     entities.append(NarwalLanguageSelect(settings))
     return entities

@@ -47,7 +47,9 @@ def test_varint_and_negative_ints() -> None:
 
 
 def test_float_point_encoding() -> None:
-    assert pb.point(10.0, -10.0) == b"\x0d" + struct.pack("<f", 10.0) + b"\x15" + struct.pack("<f", -10.0)
+    assert pb.point(10.0, -10.0) == b"\x0d" + struct.pack("<f", 10.0) + b"\x15" + struct.pack(
+        "<f", -10.0
+    )
 
 
 def test_replace_field_keeps_other_fields_sorted() -> None:
@@ -89,7 +91,9 @@ def test_every_config_field_has_distinct_numbers() -> None:
 
 
 def test_freo_preset_round_trip() -> None:
-    preset = pb.f_msg(4, pb.f_int(1, 1) + pb.f_int(2, 3)) + pb.f_msg(5, pb.f_int(1, 1) + pb.f_int(2, 3))
+    preset = pb.f_msg(4, pb.f_int(1, 1) + pb.f_int(2, 3)) + pb.f_msg(
+        5, pb.f_int(1, 1) + pb.f_int(2, 3)
+    )
     decoded = decode_freo_preset(preset)
     assert decoded[FreoStrategy.SUCTION] == 3
     assert decoded[FreoStrategy.COVERAGE] is None
@@ -127,7 +131,10 @@ def test_remote_move_publishes_and_stops(monkeypatch) -> None:
     monkeypatch.setattr(asyncio, "sleep", no_sleep)
     asyncio.run(client.remote_move(150, 30, duration=1.0, rate_hz=5))
     assert len(client.published) == 6
-    assert client.published[0] == ("telecontrol/velocity_control", pb.f_int(1, 100) + pb.f_int(2, 30))
+    assert client.published[0] == (
+        "telecontrol/velocity_control",
+        pb.f_int(1, 100) + pb.f_int(2, 30),
+    )
     assert client.published[-1] == ("telecontrol/velocity_control", b"")
 
 
@@ -140,8 +147,7 @@ def test_zone_clean_payload() -> None:
     zone = pb.first(item, 1)
     assert pb.first(zone, 1) == 2  # ZONE_TYPE_ZONE
     corners = [
-        (pb.as_signed(pb.first(p, 1)), pb.as_signed(pb.first(p, 2)))
-        for p in pb.all_values(zone, 3)
+        (pb.as_signed(pb.first(p, 1)), pb.as_signed(pb.first(p, 2))) for p in pb.all_values(zone, 3)
     ]
     assert corners == [(10, -24), (26, -24), (26, -8), (10, -8)]
     param = pb.first(item, 2)
@@ -158,7 +164,11 @@ def test_zone_clean_freo_flags() -> None:
 
 
 def test_pet_voices_decode() -> None:
-    info = pb.f_bytes(1, "voiceO17.mp3") + pb.f_bytes(2, "/userdata/usr/data/voice/voiceO17.mp3") + pb.f_bytes(3, "https://x/y.png")
+    info = (
+        pb.f_bytes(1, "voiceO17.mp3")
+        + pb.f_bytes(2, "/userdata/usr/data/voice/voiceO17.mp3")
+        + pb.f_bytes(3, "https://x/y.png")
+    )
     dogs = pb.f_bytes(1, "icon") + pb.f_msg(3, info)
     cats = pb.f_bytes(1, "icon") + pb.f_int(2, 1) + pb.f_msg(3, info)
     client = FakeClient([pb.f_msg(1, dogs) + pb.f_msg(1, cats)])

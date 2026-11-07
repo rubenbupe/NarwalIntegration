@@ -17,7 +17,7 @@ from . import NarwalConfigEntry, _validate_pass_count
 from .const import PASSES_MAX, PASSES_MIN
 from .coordinator import NarwalCoordinator, can_edit_pending_clean_settings
 from .entity import NarwalEntity
-from .robot_settings_entities import settings_numbers
+from .robot_settings_entities import robot_settings_for, settings_numbers
 
 
 async def async_setup_entry(
@@ -28,7 +28,7 @@ async def async_setup_entry(
     """Set up the Narwal passes number entity."""
     coordinator = entry.runtime_data
     entities: list = [NarwalPassesNumber(coordinator)]
-    if (settings := getattr(coordinator, "robot_settings", None)) is not None:
+    if (settings := robot_settings_for(coordinator)) is not None:
         entities.extend(settings_numbers(settings))
     async_add_entities(entities)
 

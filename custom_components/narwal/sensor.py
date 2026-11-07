@@ -19,8 +19,8 @@ from . import NarwalConfigEntry
 from .const import CONF_PRODUCT_KEY, TASK_RESULT_OPTIONS, product_keys_for_model
 from .coordinator import NarwalCoordinator
 from .entity import NarwalDockEntity, NarwalEntity
-from .robot_settings_entities import settings_sensors
 from .narwal_client import NarwalState
+from .robot_settings_entities import robot_settings_for, settings_sensors
 
 # Product keys for models without an auto-detergent tank.
 _NO_DETERGENT_KEYS = product_keys_for_model("Narwal Flow") | product_keys_for_model("Narwal Flow 2")
@@ -151,7 +151,7 @@ async def async_setup_entry(
         )
     ]
     entities.append(NarwalChargingStateSensor(coordinator))
-    if (settings := getattr(coordinator, "robot_settings", None)) is not None:
+    if (settings := robot_settings_for(coordinator)) is not None:
         entities.extend(settings_sensors(settings))
     async_add_entities(entities)
 

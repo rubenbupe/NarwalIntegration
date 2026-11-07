@@ -33,6 +33,7 @@ from .const import (
     fan_speed_map_for,
 )
 from .coordinator import NarwalCoordinator, can_prepare_clean_start
+from .extended_services import async_register_extended_services
 from .narwal_client import (
     CleaningRoute,
     CommandResult,
@@ -43,7 +44,6 @@ from .narwal_client import (
     RoomCleanSettings,
     WorkMode,
 )
-from .extended_services import async_register_extended_services
 from .robot_settings import NarwalRobotSettings
 
 _LOGGER = logging.getLogger(__name__)
@@ -64,6 +64,7 @@ _LEGACY_REPLACED_SENSOR_SUFFIXES = (
 )
 
 FIELD_ROOMS = "rooms"
+FIELD_FREO = "freo"
 FIELD_MODE = "mode"
 FIELD_SUCTION = "suction"
 FIELD_WATER = "water"
@@ -119,6 +120,8 @@ CLEAN_ROOMS_SCHEMA = vol.Schema(
             value
         ),
         vol.Optional(FIELD_ROUTE): vol.In(ROUTE_OPTIONS),
+        # Freo Mind: the robot applies its stored Freo preset
+        vol.Optional(FIELD_FREO, default=False): cv.boolean,
     }
 )
 
@@ -438,6 +441,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
                 passes=requested_settings.passes,
                 route=requested_settings.route,
                 room_settings=room_settings,
+                freo=call.data.get(FIELD_FREO, False),
             )
             if resp.result_code == 0:
                 result_name = "ACCEPTED"

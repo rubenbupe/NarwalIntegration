@@ -16,7 +16,6 @@ from .narwal_client.extended import FloorTexture, ForbiddenType, ManualControlMo
 
 _LOGGER = logging.getLogger(__name__)
 
-SERVICE_CLEAN_ROOMS_FREO = "clean_rooms_freo"
 SERVICE_CLEAN_ZONE = "clean_zone"
 SERVICE_GO_TO_POINT = "go_to_point"
 SERVICE_REMOTE_MOVE = "remote_move"
@@ -61,9 +60,6 @@ CLEAN_ZONE_SCHEMA = vol.Schema(
         vol.Optional("passes", default=1): vol.All(vol.Coerce(int), vol.Range(1, 3)),
         vol.Optional("freo", default=False): cv.boolean,
     }
-)
-CLEAN_ROOMS_FREO_SCHEMA = vol.Schema(
-    {**TARGET, vol.Required("rooms"): cv.ensure_list}
 )
 GO_TO_POINT_SCHEMA = vol.Schema(
     {**TARGET, vol.Required("x"): vol.Coerce(float), vol.Required("y"): vol.Coerce(float)}
@@ -153,15 +149,6 @@ def async_register_extended_services(
     def _check_map(result: dict[str, Any], what: str) -> None:
         if not result.get("success"):
             raise HomeAssistantError(f"Narwal rejected {what}: {result}")
-
-    async def clean_rooms_freo(call: ServiceCall) -> None:
-        coordinator, client = await _client(call)
-        rooms = await room_ids(coordinator, call.data["rooms"])
-        if not rooms:
-            raise HomeAssistantError("At least one room must be selected")
-        response = await client.start_rooms(rooms, freo=True)
-        if not response.accepted:
-            raise HomeAssistantError(f"Narwal Freo clean failed ({response.result_code})")
 
     async def clean_zone(call: ServiceCall) -> None:
         coordinator, client = await _client(call)
@@ -268,7 +255,6 @@ def async_register_extended_services(
         _check_map(await client.set_map_name(call.data["name"]), "map name")
 
     registrations = (
-        (SERVICE_CLEAN_ROOMS_FREO, clean_rooms_freo, CLEAN_ROOMS_FREO_SCHEMA, None),
         (SERVICE_CLEAN_ZONE, clean_zone, CLEAN_ZONE_SCHEMA, None),
         (SERVICE_GO_TO_POINT, go_to_point, GO_TO_POINT_SCHEMA, None),
         (SERVICE_REMOTE_MOVE, remote_move, REMOTE_MOVE_SCHEMA, None),

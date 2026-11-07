@@ -33,7 +33,6 @@ from .coordinator import (
     clean_setting_applies_to_mode,
     is_live_clean_setting_available,
 )
-from .robot_settings_entities import settings_selects
 from .entity import NarwalEntity
 from .narwal_client import (
     CleaningRoute,
@@ -44,6 +43,7 @@ from .narwal_client import (
     WorkMode,
 )
 from .narwal_client.const import fan_level_for_live_command
+from .robot_settings_entities import robot_settings_for, settings_selects
 
 
 def _raise_if_command_failed(response, action: str) -> None:
@@ -338,7 +338,7 @@ async def async_setup_entry(
             ),
         ]
     )
-    if (settings := getattr(coordinator, "robot_settings", None)) is not None:
+    if (settings := robot_settings_for(coordinator)) is not None:
         async_add_entities(settings_selects(settings))
     async_add_room_setting_entities()
     entry.async_on_unload(coordinator.async_add_listener(async_add_room_setting_entities))

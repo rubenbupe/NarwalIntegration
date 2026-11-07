@@ -20,7 +20,7 @@ refresh right after each write.
 
 ## New services
 
-`clean_rooms_freo`, `clean_zone`, `go_to_point`, `remote_move`, `play_pet_voice`,
+`clean_rooms` gains `freo: true` (Freo Mind with the stored preset); new: `clean_zone`, `go_to_point`, `remote_move`, `play_pet_voice`,
 `get_pet_voices` (response), `reset_consumables`, `add_no_go_zone`, `add_room_ban`,
 `remove_no_go_zone`, `update_room` (name, floor material, heavily-soiled flag), `set_map_name`.
 

@@ -13,7 +13,22 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import TYPE_CHECKING, Any
 
-from . import pb
+from .pb import (
+    WIRE_VARINT,
+    all_values,
+    as_double,
+    f_bytes,
+    f_float,
+    f_int,
+    f_msg,
+    f_packed,
+    first,
+    grid_point,
+    iter_fields,
+    point,
+    read_varint,
+    replace_field,
+)
 
 if TYPE_CHECKING:  # pragma: no cover
     from .models import CommandResponse
@@ -185,9 +200,9 @@ def decode_config(config: bytes) -> dict[str, Any]:
     for spec_name, spec in CONFIG_FIELDS.items():
         if spec.kind == "bool":
             values[spec_name] = False  # absent bool = false
-    for field, wire, value, _raw in pb.iter_fields(config):
+    for field, wire, value, _raw in iter_fields(config):
         name = by_get.get(field)
-        if name is None or wire != pb.WIRE_VARINT:
+        if name is None or wire != WIRE_VARINT:
             continue
         kind = CONFIG_FIELDS[name].kind
         values[name] = bool(value) if kind == "bool" else int(value)
@@ -199,13 +214,13 @@ def decode_freo_preset(preset: bytes | None) -> dict[FreoStrategy, int | None]:
     result: dict[FreoStrategy, int | None] = {s: None for s in FreoStrategy}
     if not preset:
         return result
-    for field, _wire, value, _raw in pb.iter_fields(preset):
+    for field, _wire, value, _raw in iter_fields(preset):
         try:
             strategy = FreoStrategy(field)
         except ValueError:
             continue
         if isinstance(value, bytes):
-            level = pb.first(value, 2)
+            level = first(value, 2)
             result[strategy] = int(level) if isinstance(level, int) else None
     return result
 
@@ -218,17 +233,15 @@ class ExtendedCommandsMixin:
     async def get_config_raw(self) -> bytes:
         """Return the raw Config message from config/get."""
         resp = await self.send_command(TOPIC_CMD_CONFIG_GET)  # type: ignore[attr-defined]
-        config = pb.first(resp.raw_payload, 2)
+        config = first(resp.raw_payload, 2)
         return config if isinstance(config, bytes) else b""
 
     async def get_config(self) -> dict[str, Any]:
         """Return every known setting by name, plus the Freo preset."""
         raw = await self.get_config_raw()
         values = decode_config(raw)
-        preset = pb.first(raw, CONFIG_FIELD_FREO_PRESET)
-        values["freo_preset"] = decode_freo_preset(
-            preset if isinstance(preset, bytes) else None
-        )
+        preset = first(raw, CONFIG_FIELD_FREO_PRESET)
+        values["freo_preset"] = decode_freo_preset(preset if isinstance(preset, bytes) else None)
         return values
 
     async def set_config(self, name: str, value: int | bool) -> CommandResponse:
@@ -238,27 +251,23 @@ class ExtendedCommandsMixin:
             raise ValueError(f"{name}: {value} not in {spec.options}")
         if spec.kind == "int" and not 0 <= int(value) <= 100:
             raise ValueError(f"{name}: {value} out of range 0-100")
-        payload = pb.f_int(spec.set_field, value)
+        payload = f_int(spec.set_field, value)
         return await self.send_command(TOPIC_CMD_CONFIG_SET, payload)  # type: ignore[attr-defined]
 
-    async def set_freo_strategy(
-        self, strategy: FreoStrategy, value: int | None
-    ) -> CommandResponse:
+    async def set_freo_strategy(self, strategy: FreoStrategy, value: int | None) -> CommandResponse:
         """Set one Freo Mind preset strategy; None returns it to Smart (AI).
 
         The preset is written whole, so the current one is read first and only
         the requested sub-field changes.
         """
         raw = await self.get_config_raw()
-        current = pb.first(raw, CONFIG_FIELD_FREO_PRESET)
+        current = first(raw, CONFIG_FIELD_FREO_PRESET)
         preset = current if isinstance(current, bytes) else b""
         entry = (
-            pb.f_msg(int(strategy), pb.f_int(1, True) + pb.f_int(2, value))
-            if value is not None
-            else None
+            f_msg(int(strategy), f_int(1, True) + f_int(2, value)) if value is not None else None
         )
-        preset = pb.replace_field(preset, int(strategy), entry)
-        payload = pb.f_msg(CONFIG_FIELD_FREO_PRESET, preset)
+        preset = replace_field(preset, int(strategy), entry)
+        payload = f_msg(CONFIG_FIELD_FREO_PRESET, preset)
         return await self.send_command(TOPIC_CMD_CONFIG_SET, payload)  # type: ignore[attr-defined]
 
     # --- language ---
@@ -266,20 +275,20 @@ class ExtendedCommandsMixin:
     async def get_language(self) -> int | None:
         """Robot voice language (Language enum)."""
         resp = await self.send_command(TOPIC_CMD_LANGUAGE_GET)  # type: ignore[attr-defined]
-        value = pb.first(resp.raw_payload, 2)
+        value = first(resp.raw_payload, 2)
         return int(value) if isinstance(value, int) else None
 
     async def get_supported_languages(self) -> list[int]:
         """Languages this robot can switch to."""
         resp = await self.send_command(TOPIC_CMD_SUPPORTED_LANGUAGES)  # type: ignore[attr-defined]
         values: list[int] = []
-        for value in pb.all_values(resp.raw_payload, 2):
+        for value in all_values(resp.raw_payload, 2):
             if isinstance(value, int):
                 values.append(value)
             elif isinstance(value, bytes):  # packed
                 pos = 0
                 while pos < len(value):
-                    item, pos = pb.read_varint(value, pos)
+                    item, pos = read_varint(value, pos)
                     values.append(item)
         return values
 
@@ -290,7 +299,7 @@ class ExtendedCommandsMixin:
         download a voice pack first), so success is decided by reading back.
         """
         await self.send_command(  # type: ignore[attr-defined]
-            TOPIC_CMD_LANGUAGE_SET, pb.f_int(1, language), timeout=timeout
+            TOPIC_CMD_LANGUAGE_SET, f_int(1, language), timeout=timeout
         )
         return await self.get_language() == language
 
@@ -299,27 +308,27 @@ class ExtendedCommandsMixin:
     async def get_pet_voices(self) -> list[PetVoice]:
         """Dog and cat clips stored on the robot (voice/get_voice_list TeasePet)."""
         resp = await self.send_command(  # type: ignore[attr-defined]
-            TOPIC_CMD_VOICE_LIST, pb.f_int(1, VOICE_TYPE_TEASE_PET)
+            TOPIC_CMD_VOICE_LIST, f_int(1, VOICE_TYPE_TEASE_PET)
         )
         voices: list[PetVoice] = []
-        for group in pb.all_values(resp.raw_payload, 1):
+        for group in all_values(resp.raw_payload, 1):
             if not isinstance(group, bytes):
                 continue
-            kind_value = pb.first(group, 2)
-            kind = PET_VOICE_KINDS.get(
-                int(kind_value) if isinstance(kind_value, int) else 0, "dog"
-            )
-            for info in pb.all_values(group, 3):
+            kind_value = first(group, 2)
+            kind = PET_VOICE_KINDS.get(int(kind_value) if isinstance(kind_value, int) else 0, "dog")
+            for info in all_values(group, 3):
                 if not isinstance(info, bytes):
                     continue
-                name, path, image = (pb.first(info, n) for n in (1, 2, 3))
+                name, path, image = (first(info, n) for n in (1, 2, 3))
                 if isinstance(path, bytes):
                     voices.append(
                         PetVoice(
                             kind=kind,
                             name=name.decode(errors="replace") if isinstance(name, bytes) else "",
                             path=path.decode(errors="replace"),
-                            image_url=image.decode(errors="replace") if isinstance(image, bytes) else "",
+                            image_url=(
+                                image.decode(errors="replace") if isinstance(image, bytes) else ""
+                            ),
                         )
                     )
         return voices
@@ -328,7 +337,7 @@ class ExtendedCommandsMixin:
         """Play a clip stored on the robot (developer/play_voice, resourceType FILE)."""
         if not path.startswith("/userdata/"):
             raise ValueError("voice path must be a robot path under /userdata/")
-        payload = pb.f_int(4, 2) + pb.f_bytes(5, path)
+        payload = f_int(4, 2) + f_bytes(5, path)
         return await self.send_command(TOPIC_CMD_PLAY_VOICE, payload)  # type: ignore[attr-defined]
 
     async def search_pet(self) -> CommandResponse:
@@ -345,8 +354,8 @@ class ExtendedCommandsMixin:
         PointNavi_Request{3 mapId, 4 exploreMode 2, 5 points[PoseData]}. Sending
         field 1 (poseData) without mapId makes the robot drop the socket.
         """
-        pose = pb.f_msg(1, pb.point(x_dm, y_dm)) + pb.f_float(2, theta)
-        payload = pb.f_int(3, map_id) + pb.f_int(4, 2) + pb.f_msg(5, pose)
+        pose = f_msg(1, point(x_dm, y_dm)) + f_float(2, theta)
+        payload = f_int(3, map_id) + f_int(4, 2) + f_msg(5, pose)
         return await self.send_command(TOPIC_CMD_POINT_NAVI, payload, timeout=20.0)  # type: ignore[attr-defined]
 
     async def stop_go_to_point(self) -> CommandResponse:
@@ -355,15 +364,15 @@ class ExtendedCommandsMixin:
 
     async def set_manual_control(self, mode: ManualControlMode | int) -> CommandResponse:
         """Enter/leave remote control. OFF sends the robot back to the dock."""
-        return await self.send_command(TOPIC_CMD_MANUAL_CONTROL, pb.f_int(1, int(mode)))  # type: ignore[attr-defined]
+        return await self.send_command(TOPIC_CMD_MANUAL_CONTROL, f_int(1, int(mode)))  # type: ignore[attr-defined]
 
     async def send_velocity(self, linear: int, angular: int) -> None:
         """One TelecontrolVelocity sample (publish, no response). App range about ±100."""
         payload = b""
         if linear:
-            payload += pb.f_int(1, linear)
+            payload += f_int(1, linear)
         if angular:
-            payload += pb.f_int(2, angular)
+            payload += f_int(2, angular)
         await self._send_unawaited(TOPIC_CMD_VELOCITY, payload)  # type: ignore[attr-defined]
 
     async def remote_move(
@@ -390,26 +399,26 @@ class ExtendedCommandsMixin:
         """Clear consumable alerts and reset their timers."""
         body = b""
         if maintain:
-            body += pb.f_packed(1, maintain)
+            body += f_packed(1, maintain)
         if replace:
-            body += pb.f_packed(2, replace)
+            body += f_packed(2, replace)
         if not body:
             raise ValueError("nothing to reset")
-        return await self.send_command(TOPIC_CMD_RESET_CONSUMABLE, pb.f_msg(1, body))  # type: ignore[attr-defined]
+        return await self.send_command(TOPIC_CMD_RESET_CONSUMABLE, f_msg(1, body))  # type: ignore[attr-defined]
 
     async def get_battery_info(self) -> dict[str, Any]:
         """Battery health (info/battery_info): capacity, cycles, health, temperature..."""
         resp = await self.send_command(TOPIC_CMD_BATTERY_INFO)  # type: ignore[attr-defined]
         raw = resp.raw_payload
         return {
-            "full_charge_capacity": pb.first(raw, 1),
-            "charge_cycles": pb.first(raw, 2),
-            "soc": pb.first(raw, 4),
-            "temperature": pb.as_double(pb.first(raw, 5)),
-            "voltage": pb.as_double(pb.first(raw, 6)),
-            "current": pb.as_double(pb.first(raw, 7)),
-            "health": pb.first(raw, 8),
-            "rated_capacity": pb.first(raw, 9),
+            "full_charge_capacity": first(raw, 1),
+            "charge_cycles": first(raw, 2),
+            "soc": first(raw, 4),
+            "temperature": as_double(first(raw, 5)),
+            "voltage": as_double(first(raw, 6)),
+            "current": as_double(first(raw, 7)),
+            "health": first(raw, 8),
+            "rated_capacity": first(raw, 9),
         }
 
     # --- cleaning extras ---
@@ -432,27 +441,24 @@ class ExtendedCommandsMixin:
         xa, xb = sorted((x1, x2))
         ya, yb = sorted((y1, y2))
         corners = ((xa, ya), (xb, ya), (xb, yb), (xa, yb))
-        bounds = b"".join(pb.f_msg(3, pb.grid_point(x, y)) for x, y in corners)
-        bounds += b"".join(pb.f_msg(4, pb.grid_point(x, y)) for x, y in corners)
-        zone = pb.f_int(1, 2) + bounds
+        bounds = b"".join(f_msg(3, grid_point(x, y)) for x, y in corners)
+        bounds += b"".join(f_msg(4, grid_point(x, y)) for x, y in corners)
+        zone = f_int(1, 2) + bounds
         # Pass count lives in sweepTime (5), mopTime (6) or sweepMopSyncTime (7)
         pass_fields = {2: (5,), 3: (6,), 4: (7,), 5: (5, 6)}.get(mode, (7,))
-        param = pb.f_int(1, mode) + pb.f_int(2, fan) + pb.f_int(4, water)
-        param += b"".join(pb.f_int(f, passes) for f in pass_fields)
+        param = f_int(1, mode) + f_int(2, fan) + f_int(4, water)
+        param += b"".join(f_int(f, passes) for f in pass_fields)
         if freo:
-            param += pb.f_int(9, True)
-        item = pb.f_msg(1, zone) + pb.f_msg(2, param) + pb.f_int(3, 1)
-        option = pb.f_int(1, True) if freo else b""
+            param += f_int(9, True)
+        item = f_msg(1, zone) + f_msg(2, param) + f_int(3, 1)
+        option = f_int(1, True) if freo else b""
         task_type = {2: 1, 3: 2, 4: 4, 5: 3}.get(mode, 4)
-        task = (
-            pb.f_int(1, map_id)
-            + pb.f_msg(2, item)
-            + pb.f_msg(3, option)
-            + pb.f_int(5, task_type)
-        )
-        return pb.f_msg(1, task)
+        task = f_int(1, map_id) + f_msg(2, item) + f_msg(3, option) + f_int(5, task_type)
+        return f_msg(1, task)
 
-    async def clean_zone(self, map_id: int, x1: int, y1: int, x2: int, y2: int, **kw: Any) -> CommandResponse:
+    async def clean_zone(
+        self, map_id: int, x1: int, y1: int, x2: int, y2: int, **kw: Any
+    ) -> CommandResponse:
         """Clean a rectangle of grid cells (robot must be docked)."""
         payload = self.build_zone_clean_payload(map_id, x1, y1, x2, y2, **kw)
         return await self.send_command("clean/start_clean", payload, timeout=10.0)  # type: ignore[attr-defined]
@@ -462,16 +468,14 @@ class ExtendedCommandsMixin:
     async def get_map_raw(self) -> bytes:
         """Raw StaticMapPayload (map/get_map field 2)."""
         resp = await self.send_command("map/get_map", timeout=15.0)  # type: ignore[attr-defined]
-        value = pb.first(resp.raw_payload, 2)
+        value = first(resp.raw_payload, 2)
         return value if isinstance(value, bytes) else b""
 
     @staticmethod
     def map_revision(map_raw: bytes) -> MapRevision:
         """mapId (1), mapVersion (2) and editVersion (33) of a map payload."""
-        values = {n: pb.first(map_raw, n) for n in (1, 2, 33)}
-        return MapRevision(
-            int(values[1] or 0), int(values[2] or 0), int(values[33] or 0)
-        )
+        values = {n: first(map_raw, n) for n in (1, 2, 33)}
+        return MapRevision(int(values[1] or 0), int(values[2] or 0), int(values[33] or 0))
 
     async def map_operation(self, operation: bytes) -> dict[str, Any]:
         """Apply one MapOperationPayload; retries once with the editVersion the robot reports."""
@@ -480,17 +484,17 @@ class ExtendedCommandsMixin:
         result: dict[str, Any] = {}
         for _ in range(2):
             req = (
-                pb.f_int(1, rev.map_id)
-                + pb.f_int(2, rev.map_version)
-                + pb.f_int(3, edit_version)
-                + pb.f_msg(4, operation)
+                f_int(1, rev.map_id)
+                + f_int(2, rev.map_version)
+                + f_int(3, edit_version)
+                + f_msg(4, operation)
             )
             resp = await self.send_command(TOPIC_CMD_MAP_OPERATION, req, timeout=15.0)  # type: ignore[attr-defined]
             raw = resp.raw_payload
             result = {
-                "result": pb.first(raw, 1),
-                "edit_version": pb.first(raw, 3),
-                "error_code": pb.first(raw, 4),
+                "result": first(raw, 1),
+                "edit_version": first(raw, 3),
+                "error_code": first(raw, 4),
             }
             if result["error_code"] == ERROR_CODE_UNMATCHED_EDIT_VERSION and result["edit_version"]:
                 edit_version = int(result["edit_version"])
@@ -502,8 +506,8 @@ class ExtendedCommandsMixin:
     @staticmethod
     def room_info_raw(map_raw: bytes, room_id: int) -> bytes:
         """Raw RoomInfo (map field 12) for room_id."""
-        for value in pb.all_values(map_raw, 12):
-            if isinstance(value, bytes) and pb.first(value, 1) == room_id:
+        for value in all_values(map_raw, 12):
+            if isinstance(value, bytes) and first(value, 1) == room_id:
                 return value
         raise KeyError(room_id)
 
@@ -518,12 +522,12 @@ class ExtendedCommandsMixin:
         """Rename a room, set its floor material or its heavy-dirty flag."""
         info = self.room_info_raw(await self.get_map_raw(), room_id)
         if name is not None:
-            info = pb.replace_field(info, 3, pb.f_bytes(3, name) if name else None)
+            info = replace_field(info, 3, f_bytes(3, name) if name else None)
         if floor is not None:
-            info = pb.replace_field(info, 4, pb.f_int(4, int(floor)))
+            info = replace_field(info, 4, f_int(4, int(floor)))
         if heavy_dirty is not None:
-            info = pb.replace_field(info, 7, pb.f_int(7, True) if heavy_dirty else None)
-        return await self.map_operation(pb.f_msg(3, pb.f_msg(1, info)))
+            info = replace_field(info, 7, f_int(7, True) if heavy_dirty else None)
+        return await self.map_operation(f_msg(3, f_msg(1, info)))
 
     async def add_no_go_zone(
         self,
@@ -534,21 +538,21 @@ class ExtendedCommandsMixin:
         """Add a no-go / no-mop polygon. Points are grid cells as float32 (ints are rejected)."""
         if len(polygon) < 3:
             raise ValueError("polygon needs at least 3 points")
-        area = b"".join(pb.f_msg(1, pb.point(x, y)) for x, y in polygon)
-        area += pb.f_int(2, int(zone_type)) + pb.f_int(3, zone_id)
-        return await self.map_operation(pb.f_msg(4, pb.f_int(1, 1) + pb.f_msg(2, area)))
+        area = b"".join(f_msg(1, point(x, y)) for x, y in polygon)
+        area += f_int(2, int(zone_type)) + f_int(3, zone_id)
+        return await self.map_operation(f_msg(4, f_int(1, 1) + f_msg(2, area)))
 
     async def add_room_ban(
         self, room_id: int, zone_id: int, zone_type: ForbiddenType | int = ForbiddenType.SWEEP_MOP
     ) -> dict[str, Any]:
         """Forbid a whole room (ForbiddenArea mode ROOM)."""
-        area = pb.f_int(2, int(zone_type)) + pb.f_int(3, zone_id) + pb.f_int(4, room_id) + pb.f_int(5, 1)
-        return await self.map_operation(pb.f_msg(4, pb.f_int(1, 1) + pb.f_msg(2, area)))
+        area = f_int(2, int(zone_type)) + f_int(3, zone_id) + f_int(4, room_id) + f_int(5, 1)
+        return await self.map_operation(f_msg(4, f_int(1, 1) + f_msg(2, area)))
 
     async def remove_no_go_zone(self, zone_id: int) -> dict[str, Any]:
         """Delete a no-go zone or room ban by id."""
-        return await self.map_operation(pb.f_msg(4, pb.f_int(1, 2) + pb.f_msg(2, pb.f_int(3, zone_id))))
+        return await self.map_operation(f_msg(4, f_int(1, 2) + f_msg(2, f_int(3, zone_id))))
 
     async def set_map_name(self, name: str) -> dict[str, Any]:
         """Rename the map ("" clears it)."""
-        return await self.map_operation(pb.f_msg(7, pb.f_bytes(1, name)))
+        return await self.map_operation(f_msg(7, f_bytes(1, name)))
