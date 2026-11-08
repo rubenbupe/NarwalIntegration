@@ -61,14 +61,17 @@ FLOORS = {texture.name.lower(): texture for texture in FloorTexture}
 MANUAL_MODES = {mode.name.lower(): mode for mode in ManualControlMode}
 
 POINT = vol.All(vol.ExactSequence([vol.Coerce(float), vol.Coerce(float)]))
+RECT = vol.ExactSequence([vol.Coerce(int), vol.Coerce(int), vol.Coerce(int), vol.Coerce(int)])
 
 CLEAN_ZONE_SCHEMA = vol.Schema(
     {
         **TARGET,
-        vol.Required("x1"): vol.Coerce(int),
-        vol.Required("y1"): vol.Coerce(int),
-        vol.Required("x2"): vol.Coerce(int),
-        vol.Required("y2"): vol.Coerce(int),
+        vol.Optional("x1"): vol.Coerce(int),
+        vol.Optional("y1"): vol.Coerce(int),
+        vol.Optional("x2"): vol.Coerce(int),
+        vol.Optional("y2"): vol.Coerce(int),
+        # several rectangles [[x1, y1, x2, y2], ...], cleaned in order
+        vol.Optional("zones"): vol.All(cv.ensure_list, [RECT]),
         vol.Optional("mode", default="vacuum_and_mop"): vol.In(MODES),
         vol.Optional("suction", default="standard"): vol.In(FANS),
         vol.Optional("water", default="normal"): vol.In(WATERS),
@@ -222,12 +225,17 @@ def async_register_extended_services(
 
     async def clean_zone(call: ServiceCall) -> None:
         coordinator, client = await _client(call)
+        rects = [tuple(r) for r in call.data.get("zones") or []]
+        if all(k in call.data for k in ("x1", "y1", "x2", "y2")):
+            rects.insert(0, (call.data["x1"], call.data["y1"], call.data["x2"], call.data["y2"]))
+        if not rects:
+            raise HomeAssistantError("Give x1/y1/x2/y2 or a list of zones")
+        if len(rects) > 10:
+            raise HomeAssistantError("At most 10 zones per clean")
         response = await client.clean_zone(
             _map_id(coordinator),
-            call.data["x1"],
-            call.data["y1"],
-            call.data["x2"],
-            call.data["y2"],
+            *rects[0],
+            extra_zones=rects[1:],
             mode=MODES[call.data["mode"]],
             fan=FANS[call.data["suction"]],
             water=WATERS[call.data["water"]],

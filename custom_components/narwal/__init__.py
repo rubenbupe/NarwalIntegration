@@ -496,8 +496,14 @@ def _async_register_services(hass: HomeAssistant) -> None:
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    """Set up Narwal services."""
+    """Set up Narwal services and the map card."""
     _async_register_services(hass)
+    try:
+        from .card import async_register_card
+
+        await async_register_card(hass)
+    except Exception as err:  # noqa: BLE001 - the card is optional; never block setup
+        _LOGGER.warning("Narwal map card not registered: %s", err)
     return True
 
 

@@ -212,6 +212,8 @@ def install() -> None:
     ha_dr = _mod("homeassistant.helpers.device_registry", ha_helpers)
     ha_dr.DeviceInfo = dict  # type: ignore[attr-defined]
 
+    ha_ar = _mod("homeassistant.helpers.area_registry", ha_helpers)
+    ha_ar.async_get = MagicMock()  # type: ignore[attr-defined]
     ha_er = _mod("homeassistant.helpers.entity_registry", ha_helpers)
     ha_er.async_get = MagicMock()  # type: ignore[attr-defined]
     ha_er.async_entries_for_config_entry = MagicMock(return_value=())  # type: ignore[attr-defined]
@@ -464,6 +466,11 @@ def install() -> None:
         """Stub for TimeEntity base class."""
 
     ha_time.TimeEntity = _TimeEntity  # type: ignore[attr-defined]
+
+    ha_ws = _mod("homeassistant.components.websocket_api", ha_comp)
+    ha_ws.websocket_command = lambda schema: (lambda f: f)  # type: ignore[attr-defined]
+    ha_ws.async_response = lambda f: f  # type: ignore[attr-defined]
+    ha_ws.async_register_command = MagicMock()  # type: ignore[attr-defined]
 
     ha_sensor = _mod("homeassistant.components.sensor", ha_comp)
 

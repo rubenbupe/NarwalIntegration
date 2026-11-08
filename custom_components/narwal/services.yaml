@@ -75,15 +75,20 @@ clean_rooms:
 
 clean_zone:
   name: Clean zone
-  description: Clean a rectangle given in map grid cells (the robot must be docked).
+  description: Clean one rectangle (x1..y2) or several (zones) given in map grid cells (the robot must be docked).
   target:
     entity:
       integration: narwal
       domain: vacuum
   fields:
+    zones:
+      name: Zones
+      description: List of rectangles [[x1, y1, x2, y2], ...] cleaned in order.
+      example: "[[10, -24, 26, -8]]"
+      selector:
+        object:
     x1:
       name: X1
-      required: true
       selector:
         number:
           min: -2000
@@ -91,7 +96,6 @@ clean_zone:
           mode: box
     y1:
       name: Y1
-      required: true
       selector:
         number:
           min: -2000
@@ -99,7 +103,6 @@ clean_zone:
           mode: box
     x2:
       name: X2
-      required: true
       selector:
         number:
           min: -2000
@@ -107,7 +110,6 @@ clean_zone:
           mode: box
     y2:
       name: Y2
-      required: true
       selector:
         number:
           min: -2000

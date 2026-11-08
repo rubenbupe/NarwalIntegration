@@ -654,24 +654,30 @@ class ExtendedCommandsMixin:
         water: int = 2,
         passes: int = 1,
         freo: bool = False,
+        extra_zones: list[tuple[int, int, int, int]] | None = None,
     ) -> bytes:
-        """CleanTask for one rectangle in grid cells (ZoneOption.zoneType 2)."""
-        xa, xb = sorted((x1, x2))
-        ya, yb = sorted((y1, y2))
-        corners = ((xa, ya), (xb, ya), (xb, yb), (xa, yb))
-        bounds = b"".join(f_msg(3, grid_point(x, y)) for x, y in corners)
-        bounds += b"".join(f_msg(4, grid_point(x, y)) for x, y in corners)
-        zone = f_int(1, 2) + bounds
+        """CleanTask for one or more rectangles in grid cells (ZoneOption.zoneType 2).
+
+        Each rectangle becomes its own CleanItem, cleaned in the given order.
+        """
         # Pass count lives in sweepTime (5), mopTime (6) or sweepMopSyncTime (7)
         pass_fields = {2: (5,), 3: (6,), 4: (7,), 5: (5, 6)}.get(mode, (7,))
         param = f_int(1, mode) + f_int(2, fan) + f_int(4, water)
         param += b"".join(f_int(f, passes) for f in pass_fields)
         if freo:
             param += f_int(9, True)
-        item = f_msg(1, zone) + f_msg(2, param) + f_int(3, 1)
+        items = b""
+        for order, (ax, ay, bx, by) in enumerate([(x1, y1, x2, y2), *(extra_zones or [])], 1):
+            xa, xb = sorted((int(ax), int(bx)))
+            ya, yb = sorted((int(ay), int(by)))
+            corners = ((xa, ya), (xb, ya), (xb, yb), (xa, yb))
+            bounds = b"".join(f_msg(3, grid_point(x, y)) for x, y in corners)
+            bounds += b"".join(f_msg(4, grid_point(x, y)) for x, y in corners)
+            zone = f_int(1, 2) + bounds
+            items += f_msg(2, f_msg(1, zone) + f_msg(2, param) + f_int(3, order))
         option = f_int(1, True) if freo else b""
         task_type = {2: 1, 3: 2, 4: 4, 5: 3}.get(mode, 4)
-        task = f_int(1, map_id) + f_msg(2, item) + f_msg(3, option) + f_int(5, task_type)
+        task = f_int(1, map_id) + items + f_msg(3, option) + f_int(5, task_type)
         return f_msg(1, task)
 
     async def clean_zone(

@@ -321,3 +321,20 @@ def test_rotate_map_rejects_odd_angles() -> None:
 
     with pytest.raises(ValueError):
         asyncio.run(FakeClient().rotate_map(45))
+
+
+def test_zone_clean_with_several_rectangles() -> None:
+    client = FakeClient()
+    payload = client.build_zone_clean_payload(
+        1, 0, 0, 5, 5, mode=2, extra_zones=[(10, 10, 20, 20), (30, -5, 40, 5)]
+    )
+    task = pb.first(payload, 1)
+    items = pb.all_values(task, 2)
+    assert len(items) == 3
+    assert [pb.first(i, 3) for i in items] == [1, 2, 3]  # cleaning order
+    last_zone = pb.first(items[2], 1)
+    corners = [
+        (pb.as_signed(pb.first(p, 1)), pb.as_signed(pb.first(p, 2)))
+        for p in pb.all_values(last_zone, 3)
+    ]
+    assert corners[0] == (30, -5) and corners[2] == (40, 5)
