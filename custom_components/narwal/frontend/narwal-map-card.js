@@ -4,7 +4,7 @@
  * integration; talks to it through narwal/map, narwal/pose, narwal/remote and the
  * narwal.* services. No external dependencies.
  */
-const CARD_VERSION = "1.0.1";
+const CARD_VERSION = "1.1.0";
 
 const MODES = [
   ["vacuum_and_mop", "Vacuum & mop"],
@@ -77,8 +77,8 @@ class NarwalMapCard extends HTMLElement {
   }
 
   setConfig(config) {
-    this._config = { title: "Narwal", ...config };
-    this._tab = this._config.default_tab || "rooms";
+    this._config = { title: config.selection === "switches" ? "" : "Narwal", ...config };
+    this._tab = this._config.selection === "switches" ? "rooms" : this._config.default_tab || "rooms";
     this._selected = [];
     this._zones = [];
     this._goto = null;
@@ -101,7 +101,33 @@ class NarwalMapCard extends HTMLElement {
     const first = !this._hass;
     this._hass = hass;
     if (first) this._loadMap(false);
+    if (this._switchMode) this._syncSwitchSelection();
     this._renderStatus();
+  }
+
+  get _switchMode() { return this._config.selection === "switches"; }
+
+  /* selection mirrored from the integration's room selection switches */
+  _roomSwitches() {
+    const out = {};
+    for (const [id, st] of Object.entries(this._hass.states)) {
+      if (id.startsWith("switch.") && id.endsWith("_selected") && id.includes("narwal") && st.attributes.room_id != null) {
+        out[Number(st.attributes.room_id)] = st;
+      }
+    }
+    return out;
+  }
+
+  _syncSwitchSelection() {
+    const sw = this._roomSwitches();
+    const on = Object.entries(sw).filter(([, st]) => st.state === "on").map(([id]) => Number(id));
+    const orderEntity = this._config.order_entity || "input_text.narwal_room_order";
+    const raw = (this._hass.states[orderEntity] || {}).state || "";
+    const ordered = raw.split(",").map((v) => parseInt(v, 10)).filter((v) => on.includes(v));
+    const selected = [...ordered, ...on.filter((v) => !ordered.includes(v))];
+    if (selected.join(",") === this._selected.join(",")) return;
+    this._selected = selected;
+    if (this._map) { this._paintBase(); this._draw(); this._renderPanel(); }
   }
 
   connectedCallback() {
@@ -476,7 +502,10 @@ class NarwalMapCard extends HTMLElement {
       const c = this._canvasToCell(p[0], p[1]);
       if (this._tab === "rooms") {
         const id = this._roomAt(c[0], c[1]);
-        if (id) {
+        if (id && this._switchMode) {
+          const st = this._roomSwitches()[id];
+          if (st) this._hass.callService("switch", "toggle", { entity_id: st.entity_id });
+        } else if (id) {
           const i = this._selected.indexOf(id);
           i >= 0 ? this._selected.splice(i, 1) : this._selected.push(id);
           this._paintBase();
@@ -613,7 +642,8 @@ class NarwalMapCard extends HTMLElement {
     this._canvas.addEventListener("pointerup", (e) => this._onUp(e));
     this._canvas.addEventListener("pointercancel", () => { this._press = null; this._drag = null; });
     if (this._ro) this._ro.observe(this._mapBox);
-    root.querySelector(".title").textContent = this._config.title;
+    root.querySelector(".title").textContent = this._config.title || "";
+    if (this._switchMode && !this._config.title) root.querySelector(".head").style.display = "none";
     this._renderTabs();
     this._renderPanel();
   }
@@ -621,6 +651,8 @@ class NarwalMapCard extends HTMLElement {
   _renderTabs() {
     const tabs = this.shadowRoot.querySelector(".tabs");
     tabs.innerHTML = "";
+    tabs.style.display = this._switchMode ? "none" : "";
+    if (this._switchMode) return;
     for (const [key, label, icon] of TABS) {
       const b = chip(label, icon, this._tab === key, () => {
         if (this._tab === "remote" && key !== "remote") this._stopDriving();
@@ -672,6 +704,13 @@ class NarwalMapCard extends HTMLElement {
       return;
     }
     const bar = div("bar"), end = div("bar end");
+    if (this._switchMode) {
+      hint.textContent = this._selected.length
+        ? this._selected.map((id, i) => `${i + 1}. ${this._names[id] || id}`).join("  ·  ")
+        : "Tap rooms to choose them, in cleaning order (none = whole house)";
+      hint.style.paddingBottom = "12px";
+      return;
+    }
     if (this._tab === "rooms") {
       hint.textContent = this._selected.length
         ? this._selected.map((id) => this._names[id]).join(" → ")
@@ -774,7 +813,7 @@ class NarwalMapCardEditor extends HTMLElement {
     if (!this._hass || !this._config) return;
     if (!this._form) {
       this._form = document.createElement("ha-form");
-      this._form.computeLabel = (s) => ({ entity: "Vacuum", title: "Title", default_tab: "Open on" })[s.name] || s.name;
+      this._form.computeLabel = (s) => ({ entity: "Vacuum", title: "Title", default_tab: "Open on", selection: "Mode" })[s.name] || s.name;
       this._form.addEventListener("value-changed", (e) => fire(this, "config-changed", { config: e.detail.value }));
       this.appendChild(this._form);
     }
@@ -784,6 +823,7 @@ class NarwalMapCardEditor extends HTMLElement {
       { name: "entity", selector: { entity: { domain: "vacuum" } } },
       { name: "title", selector: { text: {} } },
       { name: "default_tab", selector: { select: { mode: "dropdown", options: TABS.map(([v, l]) => ({ value: v, label: l })) } } },
+      { name: "selection", selector: { select: { mode: "dropdown", options: [{ value: "", label: "Full card" }, { value: "switches", label: "Room picker only (uses the room selection switches)" }] } } },
     ];
   }
 }
