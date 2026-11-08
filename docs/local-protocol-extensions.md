@@ -108,7 +108,8 @@ Touch gestures are only captured while drawing (zones, no-go), so pages scroll o
 | Command | Returns / does |
 |---|---|
 | `narwal/map` (`entity_id`, `refresh`) | grid (base64, 1 byte per cell: room id, 250 wall, 251 floor), size, `left`/`bottom`, resolution, rooms (names from the vacuum's area mapping), dock, robot, no-go zones, carpets (outlines), thresholds, rotation. Cached 20 s. |
-| `narwal/pose` | live robot pose in cells from `map/display_map` (no robot call), status, docked, battery |
+| `narwal/pose` | live robot pose in cells from `map/display_map` (no robot call), route signature, status, docked, battery |
+| `narwal/path` | current cleaning route in cells (`null` = gap); the card fetches it when the signature changes (`show_path: false` hides it) |
 | `narwal/remote` (`mode`, `linear`, `angular`) | manual control mode and one velocity sample |
 
 Cells are absolute map cells (same frame as `clean_zone`, `add_no_go_zone`, `add_carpet`);

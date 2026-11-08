@@ -63,6 +63,15 @@ def test_live_pose_converts_decimetres_to_cells() -> None:
     assert pose["battery"] == 87 and pose["status"] == "CLEANING"
 
 
+def test_build_path_keeps_gaps_and_drops_tiny_moves() -> None:
+    nan = float("nan")
+    display = SimpleNamespace(
+        trajectory_render_points=lambda: [(0.6, 0.6), (0.601, 0.6), (1.2, 0.6), (nan, nan), (6.0, 6.0)]
+    )
+    assert ws.build_path(display, 60) == [[1.0, 1.0], [2.0, 1.0], None, [10.0, 10.0]]
+    assert ws.build_path(None, 60) == []
+
+
 def test_remote_command_sets_mode_and_velocity() -> None:
     import asyncio
 

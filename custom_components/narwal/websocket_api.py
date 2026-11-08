@@ -7,6 +7,7 @@ add_no_go_zone and add_carpet services). Decimetres = cells * resolution / 100.
 from __future__ import annotations
 
 import base64
+import math
 import time
 import zlib
 from typing import Any
@@ -21,6 +22,8 @@ from .narwal_client.extended import ManualControlMode, decode_map_objects
 from .narwal_client.pb import all_values, as_float, as_signed, first, read_varint
 
 MAP_CACHE_SECONDS = 20
+PATH_MAX_POINTS = 6000
+PATH_MIN_CELL_DELTA = 0.5
 CELL_UNKNOWN = 0
 CELL_WALL = 250
 CELL_FLOOR = 251
@@ -156,8 +159,11 @@ def _live_pose(coordinator) -> dict[str, Any]:
             "y": float(display.robot_y) * factor,
             "heading_deg": float(getattr(display, "robot_heading", 0.0) or 0.0),
         }
+    active = any(getattr(state, flag, False) for flag in ("is_cleaning", "is_paused", "is_returning"))
+    signature = list(getattr(display, "trajectory_signature", ()) or ()) if active else []
     return {
         "robot": pose,
+        "path_signature": signature or None,
         "status": getattr(getattr(state, "working_status", None), "name", None),
         "docked": bool(getattr(state, "is_docked", False)),
         "battery": getattr(state, "battery_level", None),
@@ -194,6 +200,53 @@ async def ws_map(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
     payload = build_map_payload(map_raw, _room_names(hass, msg.get("entity_id")))
     coordinator._map_card_cache = (now, payload)
     connection.send_result(msg["id"], payload)
+
+
+def build_path(display: Any, resolution: int) -> list[list[float] | None]:
+    """Native cleaning route in map cells; None marks a gap between segments."""
+    if display is None or not resolution:
+        return []
+    factor = 100 / resolution
+    path: list[list[float] | None] = []
+    last: tuple[float, float] | None = None
+    pending_break = False
+    for raw_x, raw_y in display.trajectory_render_points():
+        if not (math.isfinite(raw_x) and math.isfinite(raw_y)):
+            pending_break = last is not None
+            continue
+        x, y = raw_x * factor, raw_y * factor
+        if not pending_break and last and math.hypot(x - last[0], y - last[1]) < PATH_MIN_CELL_DELTA:
+            continue
+        if pending_break:
+            path.append(None)
+            pending_break = False
+        path.append([round(x, 1), round(y, 1)])
+        last = (x, y)
+    if len(path) > PATH_MAX_POINTS:
+        step = len(path) / PATH_MAX_POINTS
+        keep = {int(i * step) for i in range(PATH_MAX_POINTS)} | {len(path) - 1}
+        path = [p for i, p in enumerate(path) if i in keep or p is None]
+    return path
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "narwal/path", vol.Optional("entity_id"): str}
+)
+@websocket_api.async_response
+async def ws_path(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
+    """Return the current cleaning route (only polled when its signature changes)."""
+    coordinator = _coordinator(hass, msg.get("entity_id"))
+    if coordinator is None:
+        connection.send_error(msg["id"], "not_found", "No Narwal vacuum found")
+        return
+    state = coordinator.client.state
+    resolution = getattr(getattr(state, "map_data", None), "resolution", 0) or 0
+    cache = getattr(coordinator, "_map_card_cache", None)
+    if not resolution and cache:
+        resolution = cache[1].get("resolution", 0)
+    display = getattr(state, "map_display_data", None)
+    path = await hass.async_add_executor_job(build_path, display, resolution)
+    connection.send_result(msg["id"], {"path": path})
 
 
 @websocket_api.websocket_command(
@@ -244,4 +297,5 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
     """Register the card's WebSocket commands."""
     websocket_api.async_register_command(hass, ws_map)
     websocket_api.async_register_command(hass, ws_pose)
+    websocket_api.async_register_command(hass, ws_path)
     websocket_api.async_register_command(hass, ws_remote)

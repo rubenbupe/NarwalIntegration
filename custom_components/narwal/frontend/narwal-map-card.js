@@ -4,7 +4,7 @@
  * integration; talks to it through narwal/map, narwal/pose, narwal/remote and the
  * narwal.* services. No external dependencies.
  */
-const CARD_VERSION = "1.3.0";
+const CARD_VERSION = "1.4.0";
 
 const MODES = [
   ["vacuum_and_mop", "Vacuum & mop"],
@@ -242,9 +242,41 @@ class NarwalMapCard extends HTMLElement {
           this._loadMap(true);
         }
       }
+      await this._syncPath();
       this._draw();
       this._renderStatus();
     } catch (_) { /* robot busy */ }
+  }
+
+  async _syncPath() {
+    const signature = this._live && this._live.path_signature;
+    if (!signature || this._config.show_path === false) { this._path = null; this._pathKey = null; return; }
+    const key = signature.join(":");
+    if (key === this._pathKey) return;
+    const result = await this._ws({ type: "narwal/path" });
+    this._path = result.path;
+    this._pathKey = key;
+  }
+
+  _drawPath(ctx) {
+    if (!this._path || !this._path.length) return;
+    ctx.save();
+    ctx.strokeStyle = "rgba(255,255,255,.9)";
+    ctx.lineWidth = Math.max(1.5, this._scale * 0.9);
+    ctx.lineJoin = ctx.lineCap = "round";
+    ctx.beginPath();
+    let pen = false;
+    for (const point of this._path) {
+      if (!point) { pen = false; continue; }
+      const [px, py] = this._cellToCanvas(point[0], point[1]);
+      if (pen) ctx.lineTo(px, py); else ctx.moveTo(px, py);
+      pen = true;
+    }
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(63,81,181,.85)";
+    ctx.lineWidth = Math.max(1, this._scale * 0.45);
+    ctx.stroke();
+    ctx.restore();
   }
 
   _setMap(map) {
@@ -494,6 +526,8 @@ class NarwalMapCard extends HTMLElement {
       ctx.beginPath(); ctx.arc(px, py - 12, 9, Math.PI, 0); ctx.lineTo(px, py); ctx.closePath(); ctx.fill();
       ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(px, py - 12, 3.5, 0, Math.PI * 2); ctx.fill();
     }
+
+    this._drawPath(ctx);
 
     // dock
     if (this._map.dock) {
