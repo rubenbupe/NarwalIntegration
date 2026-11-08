@@ -27,12 +27,16 @@ async def async_register_card(hass: HomeAssistant) -> None:
     from .websocket_api import async_register_websocket_api
 
     folder = Path(__file__).parent / "frontend"
-    manifest = json.loads((Path(__file__).parent / "manifest.json").read_text(encoding="utf-8"))
-    stamp = int((folder / CARD_FILE).stat().st_mtime)
+
+    def _version() -> str:
+        manifest = json.loads((Path(__file__).parent / "manifest.json").read_text(encoding="utf-8"))
+        return f"{manifest.get('version', '0')}-{int((folder / CARD_FILE).stat().st_mtime)}"
+
+    version = await hass.async_add_executor_job(_version)
     await hass.http.async_register_static_paths(
         [StaticPathConfig(CARD_URL, str(folder), cache_headers=False)]
     )
-    add_extra_js_url(hass, f"{CARD_URL}/{CARD_FILE}?v={manifest.get('version', '0')}-{stamp}")
+    add_extra_js_url(hass, f"{CARD_URL}/{CARD_FILE}?v={version}")
     async_register_websocket_api(hass)
     hass.data[_REGISTERED] = True
     _LOGGER.debug("Narwal map card registered at %s/%s", CARD_URL, CARD_FILE)

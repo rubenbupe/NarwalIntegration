@@ -4,7 +4,7 @@
  * integration; talks to it through narwal/map, narwal/pose, narwal/remote and the
  * narwal.* services. No external dependencies.
  */
-const CARD_VERSION = "1.0.0";
+const CARD_VERSION = "1.0.1";
 
 const MODES = [
   ["vacuum_and_mop", "Vacuum & mop"],
@@ -162,6 +162,7 @@ class NarwalMapCard extends HTMLElement {
 
   _setMap(map) {
     this._map = map;
+    this._rotation = this._config.rotation != null ? Number(this._config.rotation) : ((map.rotation % 360) + 360) % 360;
     const bin = atob(map.cells);
     const cells = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) cells[i] = bin.charCodeAt(i);
@@ -196,17 +197,40 @@ class NarwalMapCard extends HTMLElement {
   }
 
   /* ---------- coordinates ---------- */
+  /* crop-relative continuous (col,row) <-> display (u,v), honouring the map rotation */
+  _rot(c, r) {
+    const W = this._crop.c1 - this._crop.c0 + 1, H = this._crop.r1 - this._crop.r0 + 1;
+    switch (this._rotation) {
+      case 90: return [H - r, c];
+      case 180: return [W - c, H - r];
+      case 270: return [r, W - c];
+      default: return [c, r];
+    }
+  }
+
+  _unrot(u, v) {
+    const W = this._crop.c1 - this._crop.c0 + 1, H = this._crop.r1 - this._crop.r0 + 1;
+    switch (this._rotation) {
+      case 90: return [v, H - u];
+      case 180: return [W - u, H - v];
+      case 270: return [W - v, u];
+      default: return [u, v];
+    }
+  }
+
   _cellToCanvas(x, y) {
     const m = this._map;
     const col = x - m.left - this._crop.c0;
     const row = (m.height - 1 - (y - m.bottom)) - this._crop.r0;
-    return [col * this._scale, row * this._scale];
+    const [u, v] = this._rot(col, row);
+    return [u * this._scale, v * this._scale];
   }
 
   _canvasToCell(px, py) {
     const m = this._map;
-    const col = px / this._scale + this._crop.c0;
-    const row = py / this._scale + this._crop.r0;
+    const [c, r] = this._unrot(px / this._scale, py / this._scale);
+    const col = c + this._crop.c0;
+    const row = r + this._crop.r0;
     return [m.left + col, m.bottom + (m.height - 1 - row)];
   }
 
@@ -252,7 +276,17 @@ class NarwalMapCard extends HTMLElement {
       }
     }
     ctx.putImageData(img, 0, 0);
-    this._base = off;
+    const rot = this._rotation || 0;
+    if (!rot) { this._base = off; return; }
+    const out = document.createElement("canvas");
+    const swap = rot === 90 || rot === 270;
+    out.width = swap ? h : w; out.height = swap ? w : h;
+    const octx = out.getContext("2d");
+    octx.imageSmoothingEnabled = false;
+    octx.translate(out.width / 2, out.height / 2);
+    octx.rotate((rot * Math.PI) / 180);
+    octx.drawImage(off, -w / 2, -h / 2);
+    this._base = out;
   }
 
   _draw() {
@@ -299,8 +333,8 @@ class NarwalMapCard extends HTMLElement {
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     for (const [id, [col, row]] of Object.entries(this._centroids)) {
-      const px = (col - this._crop.c0 + 0.5) * this._scale;
-      const py = (row - this._crop.r0 + 0.5) * this._scale;
+      const [u, v] = this._rot(col - this._crop.c0 + 0.5, row - this._crop.r0 + 0.5);
+      const px = u * this._scale, py = v * this._scale;
       const order = this._tab === "rooms" ? this._selected.indexOf(Number(id)) : -1;
       ctx.font = "500 11px var(--paper-font-body1_-_font-family, sans-serif)";
       if (order >= 0) {
@@ -343,16 +377,19 @@ class NarwalMapCard extends HTMLElement {
     if (robot) {
       const [px, py] = this._cellToCanvas(robot.x, robot.y);
       const heading = live ? (robot.heading_deg * Math.PI) / 180 : robot.theta || 0;
+      const [hx, hy] = this._cellToCanvas(robot.x + Math.cos(heading) * 4, robot.y + Math.sin(heading) * 4);
+      const hl = Math.hypot(hx - px, hy - py) || 1;
       ctx.fillStyle = accent; ctx.strokeStyle = "#fff"; ctx.lineWidth = 2.5;
       ctx.beginPath(); ctx.arc(px, py, 8, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(px, py);
-      ctx.lineTo(px + Math.cos(heading) * 8, py - Math.sin(heading) * 8); ctx.stroke();
+      ctx.lineTo(px + ((hx - px) / hl) * 8, py + ((hy - py) / hl) * 8); ctx.stroke();
     }
   }
 
   _drawRect(ctx, z, color, label) {
-    const [ax, ay] = this._cellToCanvas(Math.min(z.x1, z.x2), Math.max(z.y1, z.y2));
-    const [bx, by] = this._cellToCanvas(Math.max(z.x1, z.x2), Math.min(z.y1, z.y2));
+    const p1 = this._cellToCanvas(z.x1, z.y1), p2 = this._cellToCanvas(z.x2, z.y2);
+    const ax = Math.min(p1[0], p2[0]), bx = Math.max(p1[0], p2[0]);
+    const ay = Math.min(p1[1], p2[1]), by = Math.max(p1[1], p2[1]);
     ctx.fillStyle = hexA(color, 0.18);
     ctx.fillRect(ax, ay, bx - ax, by - ay);
     ctx.lineWidth = 2; ctx.strokeStyle = color; ctx.strokeRect(ax, ay, bx - ax, by - ay);
@@ -416,8 +453,12 @@ class NarwalMapCard extends HTMLElement {
       Object.assign(d.rect, { x1: d.orig.x1 + dx, x2: d.orig.x2 + dx, y1: d.orig.y1 + dy, y2: d.orig.y2 + dy });
     } else if (d.kind === "resize") {
       const r = d.rect;
-      const left = Math.min(r.x1, r.x2), top = Math.max(r.y1, r.y2);
-      Object.assign(r, { x1: left, y1: top, x2: Math.round(c[0]), y2: Math.round(c[1]) });
+      if (!d.anchor) {
+        // anchor = the corner farthest from the grabbed handle
+        const corners = [[r.x1, r.y1], [r.x2, r.y2], [r.x1, r.y2], [r.x2, r.y1]];
+        d.anchor = corners.reduce((best, k) => (dist(k, c) > dist(best, c) ? k : best));
+      }
+      Object.assign(r, { x1: d.anchor[0], y1: d.anchor[1], x2: Math.round(c[0]), y2: Math.round(c[1]) });
     }
     this._draw();
   }
