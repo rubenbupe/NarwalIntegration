@@ -148,14 +148,14 @@ clean_zone:
 
 go_to_point:
   name: Go to point
-  description: Drive to a map point in decimetres (same frame as the robot pose).
+  description: Drive to a map point in grid cells (same frame as the robot pose).
   target:
     entity:
       integration: narwal
       domain: vacuum
   fields:
     x:
-      name: X (dm)
+      name: X (cells)
       required: true
       selector:
         number:
@@ -164,7 +164,7 @@ go_to_point:
           step: 0.1
           mode: box
     y:
-      name: Y (dm)
+      name: Y (cells)
       required: true
       selector:
         number:

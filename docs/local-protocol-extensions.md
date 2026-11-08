@@ -49,7 +49,7 @@ live map), `switch_map`, `delete_map` (needs confirm), `start_mapping`, `continu
   message is written, so the current preset is read first.
 - `config/language/set` answers `RESULT_TYPE_FAILED` even when it switches; success is read back.
 - `telecontrol/point_navi` must carry `3 mapId`, `4 exploreMode`, `5 points[PoseData]`
-  (float32 decimetres). Field 1 `poseData` without `mapId` makes the robot drop the socket.
+  (float32 cells). Field 1 `poseData` without `mapId` makes the robot drop the socket.
 - Remote control: `set_manual_control_mode 1` (JOYSTICK; the robot undocks slightly), stream
   `telecontrol/velocity_control {1 linear, 2 angular}` (±100, ~5 Hz, never answered — listed in
   `UNACKNOWLEDGED_TOPICS`), mode 0 ends it and the robot docks.
@@ -113,7 +113,7 @@ Touch gestures are only captured while drawing (zones, no-go), so pages scroll o
 | `narwal/remote` (`mode`, `linear`, `angular`) | manual control mode and one velocity sample |
 
 Cells are absolute map cells (same frame as `clean_zone`, `add_no_go_zone`, `add_carpet`);
-decimetres = cells × resolution / 100. `clean_zone` accepts `zones: [[x1, y1, x2, y2], ...]`.
+robot poses and routes (`get_map`, `display_map`, `point_navi`) are float32 values in those same cells. `clean_zone` accepts `zones: [[x1, y1, x2, y2], ...]`.
 
 ## Translations
 

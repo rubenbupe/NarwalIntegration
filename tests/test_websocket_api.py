@@ -21,7 +21,7 @@ def _map_raw() -> bytes:
     values = [1 << 8 | 1, 2 << 8 | 1, 40, 2 << 8 | 3, 0, 0]  # index = (y - bottom) * w + (x - left)
     grid = pb.f_packed(1, values)
     border = pb.f_int(1, bottom) + pb.f_int(3, left)
-    dock = pb.f_msg(1, pb.point(-0.6, 0.0)) + pb.f_float(2, 0.0)
+    dock = pb.f_msg(1, pb.point(-1.0, 0.0)) + pb.f_float(2, 0.0)
     return (
         pb.f_int(1, 7)
         + pb.f_int(3, 60)
@@ -44,14 +44,13 @@ def test_build_map_payload_cells_rooms_and_pose() -> None:
     assert cells == [1, 2, ws.CELL_WALL, 2, 0, 0]
     names = {r["id"]: r["name"] for r in payload["rooms"]}
     assert names == {1: "Study1", 2: "Kitchen"}  # HA area name wins, robot name is the fallback
-    # dock -0.6 dm at 60 mm cells = -1 cell
+    # poses are already in cells
     assert round(payload["dock"]["x"], 3) == -1.0
 
 
-def test_live_pose_converts_decimetres_to_cells() -> None:
+def test_live_pose_is_already_in_cells() -> None:
     state = SimpleNamespace(
-        map_display_data=SimpleNamespace(robot_x=-8.4, robot_y=-0.6, robot_heading=90.0),
-        map_data=SimpleNamespace(resolution=60),
+        map_display_data=SimpleNamespace(robot_x=-14.0, robot_y=-1.0, robot_heading=90.0),
         working_status=SimpleNamespace(name="CLEANING"),
         is_docked=False,
         battery_level=87,
@@ -63,13 +62,24 @@ def test_live_pose_converts_decimetres_to_cells() -> None:
     assert pose["battery"] == 87 and pose["status"] == "CLEANING"
 
 
+def test_live_pose_defers_to_the_map_when_docked() -> None:
+    state = SimpleNamespace(
+        map_display_data=SimpleNamespace(robot_x=-1.8, robot_y=-0.5, robot_heading=173.0),
+        working_status=SimpleNamespace(name="CHARGED"),
+        is_docked=True,
+        battery_level=72,
+    )
+    pose = ws._live_pose(SimpleNamespace(client=SimpleNamespace(state=state)))
+    assert pose["robot"] is None and pose["docked"] is True
+
+
 def test_build_path_keeps_gaps_and_drops_tiny_moves() -> None:
     nan = float("nan")
     display = SimpleNamespace(
-        trajectory_render_points=lambda: [(0.6, 0.6), (0.601, 0.6), (1.2, 0.6), (nan, nan), (6.0, 6.0)]
+        trajectory_render_points=lambda: [(1.0, 1.0), (1.1, 1.0), (2.0, 1.0), (nan, nan), (10.0, 10.0)]
     )
-    assert ws.build_path(display, 60) == [[1.0, 1.0], [2.0, 1.0], None, [10.0, 10.0]]
-    assert ws.build_path(None, 60) == []
+    assert ws.build_path(display) == [[1.0, 1.0], [2.0, 1.0], None, [10.0, 10.0]]
+    assert ws.build_path(None) == []
 
 
 def test_remote_command_sets_mode_and_velocity() -> None:

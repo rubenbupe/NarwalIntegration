@@ -565,14 +565,14 @@ class ExtendedCommandsMixin:
     # --- movement ---
 
     async def go_to_point(
-        self, x_dm: float, y_dm: float, map_id: int, theta: float = 0.0
+        self, x: float, y: float, map_id: int, theta: float = 0.0
     ) -> CommandResponse:
-        """Drive to a map point (float32 decimetres), as the app's video map does.
+        """Drive to a map point (float32 cells), as the app's video map does.
 
         PointNavi_Request{3 mapId, 4 exploreMode 2, 5 points[PoseData]}. Sending
         field 1 (poseData) without mapId makes the robot drop the socket.
         """
-        pose = f_msg(1, point(x_dm, y_dm)) + f_float(2, theta)
+        pose = f_msg(1, point(x, y)) + f_float(2, theta)
         payload = f_int(3, map_id) + f_int(4, 2) + f_msg(5, pose)
         return await self.send_command(TOPIC_CMD_POINT_NAVI, payload, timeout=20.0)  # type: ignore[attr-defined]
 

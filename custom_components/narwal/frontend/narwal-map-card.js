@@ -4,7 +4,7 @@
  * integration; talks to it through narwal/map, narwal/pose, narwal/remote and the
  * narwal.* services. No external dependencies.
  */
-const CARD_VERSION = "1.4.0";
+const CARD_VERSION = "1.4.1";
 
 const MODES = [
   ["vacuum_and_mop", "Vacuum & mop"],
@@ -703,8 +703,7 @@ class NarwalMapCard extends HTMLElement {
   }
 
   async _goToPoint() {
-    const f = this._map.resolution / 100;
-    const ok = await this._service("go_to_point", { x: +(this._goto[0] * f).toFixed(2), y: +(this._goto[1] * f).toFixed(2) });
+    const ok = await this._service("go_to_point", { x: +this._goto[0].toFixed(2), y: +this._goto[1].toFixed(2) });
     if (ok) fire(this, "hass-notification", { message: "Narwal: on the way" });
   }
 
