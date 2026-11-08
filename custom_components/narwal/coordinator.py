@@ -74,6 +74,7 @@ ROOM_CLEAN_SETTING_VALUE_TYPES = {
     "water": MopHumidity,
     "mop_strength": MopStrengthLevel,
     "route": CleaningRoute,
+    "freo": bool,
 }
 MOP_WORK_MODES = frozenset(
     {WorkMode.MOP, WorkMode.VACUUM_THEN_MOP, WorkMode.VACUUM_AND_MOP}
@@ -636,6 +637,7 @@ class NarwalCoordinator(DataUpdateCoordinator[NarwalState]):
                 mop_strength=fallback.mop_strength,
                 passes=fallback.passes,
                 route=fallback.route,
+                freo=fallback.freo,
             )
             for attr in custom_fields:
                 if attr in ROOM_CLEAN_SETTING_ATTRS:

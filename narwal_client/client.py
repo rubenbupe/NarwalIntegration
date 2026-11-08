@@ -184,6 +184,7 @@ class RoomCleanSettings:
     mop_strength: MopStrengthLevel = MopStrengthLevel.NORMAL
     passes: int = 1
     route: CleaningRoute | None = None
+    freo: bool = False  # Freo Mind for this room (CleanParam.9)
 
 
 def _base_status_working_status(decoded: dict[str, Any] | object) -> WorkingStatus | None:
@@ -1552,6 +1553,8 @@ class NarwalClient(ExtendedCommandsMixin):
             param["8"] = int(settings.route)
         for tag in pass_tags:
             param[tag] = int(settings.passes)
+        if getattr(settings, "freo", False):
+            param["9"] = 1  # CleanParam.enableSmartMode (Freo Mind)
         return param
 
     @classmethod
@@ -1616,6 +1619,8 @@ class NarwalClient(ExtendedCommandsMixin):
         task_type = self._task_type_for_settings(
             list(settings_by_room.values()),
         )
+        # TaskOption.enableSmartMode when the whole task or any room uses Freo Mind
+        freo_task = freo or any(getattr(s, "freo", False) for s in settings_by_room.values())
         param_keys: set[str] = set()
         params_by_room: dict[int, dict[str, int]] = {}
         for rid, settings in settings_by_room.items():
@@ -1631,7 +1636,7 @@ class NarwalClient(ExtendedCommandsMixin):
         task = {
             "1": map_id,
             "2": items if len(items) > 1 else items[0],
-            "3": {"1": 1} if freo else {},  # TaskOption.enableSmartMode
+            "3": {"1": 1} if freo_task else {},  # TaskOption.enableSmartMode
             "5": int(task_type),  # CleanTask.taskType
         }
         item_typedef = {
@@ -1653,7 +1658,7 @@ class NarwalClient(ExtendedCommandsMixin):
             "1": {"type": "int"},
             "2": item_typedef,
             "3": {"type": "message", "message_typedef": (
-                {"1": {"type": "int"}} if freo else {}
+                {"1": {"type": "int"}} if freo_task else {}
             )},
             "5": {"type": "int"},
         }}}

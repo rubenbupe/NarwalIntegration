@@ -84,6 +84,7 @@ async def async_setup_entry(
     """Set up Narwal switch entities."""
     coordinator = entry.runtime_data
     known_room_selections: dict[tuple[str | None, int], NarwalRoomSelectionSwitch] = {}
+    known_room_freo: dict[tuple[str | None, int], NarwalRoomFreoSwitch] = {}
 
     @callback
     def async_add_room_selection_entities() -> None:
@@ -98,6 +99,12 @@ async def async_setup_entry(
                 continue
             current_room_ids.add(room.room_id)
             key = (map_id, room.room_id)
+            if key not in known_room_freo:
+                freo_switch = NarwalRoomFreoSwitch(
+                    coordinator, room.room_id, room.display_name, map_id=map_id
+                )
+                known_room_freo[key] = freo_switch
+                entities.append(freo_switch)
             if key in known_room_selections:
                 known_room_selections[key].async_update_room_name(room.display_name)
                 continue
@@ -273,6 +280,65 @@ class NarwalDockTaskSwitch(NarwalDockEntity, SwitchEntity):
         raise HomeAssistantError(
             f"Narwal {action} {self.entity_description.key} failed: {result_name}"
         )
+
+
+class NarwalRoomFreoSwitch(NarwalEntity, SwitchEntity):
+    """Per-room Freo Mind: the room is cleaned with the robot's Freo preset."""
+
+    _attr_icon = "mdi:creation"
+
+    def __init__(
+        self,
+        coordinator: NarwalCoordinator,
+        room_id: int,
+        room_name: str,
+        *,
+        map_id: str | None = None,
+    ) -> None:
+        """Initialize the per-room Freo switch."""
+        super().__init__(coordinator)
+        self._map_id = map_id
+        self._room_id = room_id
+        device_id = coordinator.config_entry.data["device_id"]
+        map_prefix = f"map_{slugify(map_id)}_" if map_id is not None else ""
+        self._attr_unique_id = f"{device_id}_{map_prefix}room_{room_id}_freo"
+        self._attr_name = f"{room_name} Freo Mind"
+        self._attr_entity_category = EntityCategory.CONFIG
+
+    @property
+    def is_on(self) -> bool:
+        """Return whether this room is cleaned with Freo Mind."""
+        settings = self.coordinator.effective_room_clean_settings_for(
+            self._room_id, map_id=self._map_id
+        )
+        return bool(getattr(settings, "freo", False))
+
+    @property
+    def available(self) -> bool:
+        """Return True when room profiles can be changed."""
+        return super().available and can_edit_pending_clean_settings(self.coordinator.data)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, str | int]:
+        """Room metadata for dashboards."""
+        return {"room_id": self._room_id, "map_id": self._map_id or ""}
+
+    async def _set(self, value: bool) -> None:
+        if getattr(self.coordinator, "_room_profile_store_loaded", True) is False:
+            raise HomeAssistantError("Narwal room profiles are not restored yet")
+        self.coordinator.set_room_clean_setting(
+            self._room_id, "freo", value, map_id=self._map_id
+        )
+        self.async_write_ha_state()
+        self.coordinator.async_update_listeners()
+
+    async def async_turn_on(self, **kwargs) -> None:
+        """Enable Freo Mind for this room."""
+        await self._set(True)
+
+    async def async_turn_off(self, **kwargs) -> None:
+        """Disable Freo Mind for this room."""
+        await self._set(False)
 
 
 class NarwalRoomSelectionSwitch(NarwalEntity, SwitchEntity):

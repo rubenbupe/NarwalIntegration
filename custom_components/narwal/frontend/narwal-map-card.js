@@ -4,7 +4,7 @@
  * integration; talks to it through narwal/map, narwal/pose, narwal/remote and the
  * narwal.* services. No external dependencies.
  */
-const CARD_VERSION = "1.2.0";
+const CARD_VERSION = "1.2.1";
 
 const MODES = [
   ["vacuum_and_mop", "Vacuum & mop"],
@@ -790,6 +790,15 @@ class NarwalMapCard extends HTMLElement {
     }
     const bar = div("bar"), end = div("bar end");
     if (this._switchMode) {
+      // picker mode: no description under the map (the dashboard explains itself)
+      hint.textContent = "";
+      hint.style.display = "none";
+      if (this._tab === "zones" && this._zones.length) {
+        end.appendChild(button("Clear zones", "ghost", () => { this._zones = []; this._saveZones(); this._draw(); this._renderPanel(); }));
+        panel.appendChild(end);
+      }
+      return;
+      // eslint-disable-next-line no-unreachable
       hint.style.paddingBottom = "12px";
       if (this._tab === "zones") {
         hint.textContent = this._zones.length

@@ -338,3 +338,26 @@ def test_zone_clean_with_several_rectangles() -> None:
         for p in pb.all_values(last_zone, 3)
     ]
     assert corners[0] == (30, -5) and corners[2] == (40, 5)
+
+
+def test_room_freo_sets_clean_param_and_task_option() -> None:
+    import blackboxprotobuf
+
+    from narwal_client.client import NarwalClient, RoomCleanSettings
+    from narwal_client.const import WorkMode
+
+    client = NarwalClient.__new__(NarwalClient)
+    payload = client._build_start_clean_payload(
+        [2, 9],
+        1,
+        room_settings={
+            2: RoomCleanSettings(work_mode=WorkMode.VACUUM_THEN_MOP, freo=True),
+            9: RoomCleanSettings(work_mode=WorkMode.VACUUM_THEN_MOP),
+        },
+    )
+    decoded, _ = blackboxprotobuf.decode_message(payload)
+    task = decoded["1"]
+    items = task["2"]
+    assert items[0]["2"].get("9") == 1  # room 2 uses Freo
+    assert "9" not in items[1]["2"]  # room 9 does not
+    assert task["3"] == {"1": 1}  # task marked Freo because a room uses it
