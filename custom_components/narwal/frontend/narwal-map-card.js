@@ -4,7 +4,7 @@
  * integration; talks to it through narwal/map, narwal/pose, narwal/remote and the
  * narwal.* services. No external dependencies.
  */
-const CARD_VERSION = "1.2.1";
+const CARD_VERSION = "1.2.2";
 
 const MODES = [
   ["vacuum_and_mop", "Vacuum & mop"],
@@ -41,8 +41,8 @@ const css = `
   .chip ha-icon { --mdc-icon-size: 18px; }
   .chip.on { background: var(--narwal-accent); border-color: var(--narwal-accent); color: #fff; }
   .chip:disabled { opacity: .45; cursor: default; }
-  .map { position: relative; padding: 0 12px; touch-action: none; }
-  canvas.view { display: block; margin: 0 auto; border-radius: 12px; touch-action: none; }
+  .map { position: relative; padding: 0 12px; }
+  canvas.view { display: block; margin: 0 auto; border-radius: 12px; touch-action: pan-y; }
   .hint { text-align: center; font-size: 12px; color: var(--secondary-text-color); padding: 6px 16px 0; min-height: 18px; }
   .bar { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 12px 4px; align-items: center; }
   .bar.end { justify-content: flex-end; padding-bottom: 14px; }
@@ -235,6 +235,13 @@ class NarwalMapCard extends HTMLElement {
     if (!this._hass || !this._map || document.hidden) return;
     try {
       this._live = await this._ws({ type: "narwal/pose" });
+      if (this._live && !this._live.robot && !this._live.docked) {
+        const now = Date.now();
+        if (!this._lastPoseMap || now - this._lastPoseMap > 10000) {
+          this._lastPoseMap = now;
+          this._loadMap(true);
+        }
+      }
       this._draw();
       this._renderStatus();
     } catch (_) { /* robot busy */ }
@@ -370,6 +377,10 @@ class NarwalMapCard extends HTMLElement {
   }
 
   _draw() {
+    if (this._canvas) {
+      // only capture gestures while drawing; otherwise let the page scroll
+      this._canvas.style.touchAction = this._tab === "zones" || this._tab === "nogo" ? "none" : "pan-y";
+    }
     if (!this._canvas || !this._map || !this._base) return;
     const box = this._mapBox.clientWidth - 24;
     if (box <= 0) return;
