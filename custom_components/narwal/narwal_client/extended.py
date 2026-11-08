@@ -1003,6 +1003,11 @@ def decode_map_objects(map_raw: bytes) -> dict[str, list[dict[str, Any]]]:
                     "option": first(value, 4),
                     "source": first(value, 5),
                     "room_id": first(value, 12),
+                    "polygon": [
+                        (as_signed(first(g, 1)) or 0, as_signed(first(g, 2)) or 0)
+                        for g in all_values(value, 2)
+                        if isinstance(g, bytes)
+                    ],
                 }
             )
     thresholds = []

@@ -1,0 +1,486 @@
+{
+  "config": {
+    "flow_title": "Aspirador Narwal ({host})",
+    "step": {
+      "user": {
+        "title": "Conectar con el aspirador Narwal",
+        "description": "Introduce la dirección IP de tu robot Narwal y elige el modelo.",
+        "data": {
+          "host": "Dirección IP",
+          "port": "Puerto",
+          "model": "Modelo"
+        }
+      },
+      "device_id": {
+        "title": "Introduce el ID del dispositivo",
+        "description": "La detección automática no está disponible. Introduce el ID de 32 caracteres que la nube asigna al aspirador, o marca la casilla para volver a intentar la detección (útil si el robot estaba dormido en el primer intento). Consulta la documentación de la integración para saber cómo obtenerlo.",
+        "data": {
+          "device_id": "ID del dispositivo",
+          "retry_auto_detect": "Volver a intentar la detección automática"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "No se puede conectar con el aspirador. Comprueba la dirección IP y que esté encendido.",
+      "unknown": "Se produjo un error inesperado.",
+      "device_id_required": "Introduce un ID de dispositivo o marca «Volver a intentar la detección automática»."
+    },
+    "abort": {
+      "already_configured": "Este aspirador ya está configurado."
+    }
+  },
+  "entity": {
+    "vacuum": {
+      "vacuum": {
+        "name": "Aspirar"
+      }
+    },
+    "sensor": {
+      "cleaning_area": {
+        "name": "Área limpiada"
+      },
+      "cleaning_time": {
+        "name": "Tiempo de limpieza"
+      },
+      "remaining_time": {
+        "name": "Tiempo restante"
+      },
+      "firmware_version": {
+        "name": "Versión de firmware"
+      },
+      "dust_bag_health": {
+        "name": "Estado de la bolsa de polvo"
+      },
+      "detergent_remaining": {
+        "name": "Detergente restante"
+      },
+      "last_clean_result": {
+        "name": "Resultado de la última limpieza",
+        "state": {
+          "normal_end": "Completada",
+          "user_force_end": "Detenida por el usuario",
+          "shutdown_force_end": "Terminada (apagado)",
+          "low_battery_force_end": "Terminada (batería baja)",
+          "overflow_force_end": "Terminada (depósito lleno)",
+          "pause_too_long_force_end": "Terminada (pausa demasiado larga)",
+          "system_error_force_end": "Terminada (error del sistema)",
+          "user_force_end_on_station": "Detenida en la base",
+          "user_force_end_on_app": "Detenida desde la app",
+          "recall_end": "Enviado a la base",
+          "normal_end_replenish_map_fail": "Completada (falló la actualización del mapa)",
+          "map_unmatched_force_end": "Terminada (mapa no coincide)",
+          "relocation_fail_with_station_force_end": "Terminada (no se pudo relocalizar)",
+          "relocation_fail_without_station_force_end": "Terminada (sin relocalizar ni base)",
+          "pretask_error_force_end": "Terminada (error previo)",
+          "schedule_task_force_end": "Terminada (programación)",
+          "unexecuted": "No ejecutada",
+          "not_find_pet": "Mascota no encontrada"
+        }
+      },
+      "charging_state": {
+        "name": "Cargando",
+        "state": {
+          "charging": "Cargando",
+          "fully_charged": "Carga completa",
+          "not_charging": "Sin cargar"
+        }
+      },
+      "battery_health": {
+        "name": "Salud de la batería"
+      },
+      "battery_cycles": {
+        "name": "Ciclos de carga"
+      },
+      "battery_temperature": {
+        "name": "Temperatura de la batería"
+      },
+      "battery_capacity": {
+        "name": "Capacidad de la batería"
+      },
+      "map_objects": {
+        "name": "Objetos del mapa"
+      }
+    },
+    "binary_sensor": {
+      "docked": {
+        "name": "En la base",
+        "state": {
+          "on": "En la base",
+          "off": "Fuera de la base"
+        }
+      },
+      "error": {
+        "name": "Error",
+        "state": {
+          "on": "Problema",
+          "off": "OK"
+        }
+      },
+      "clean_water_tank": {
+        "name": "Depósito de agua limpia"
+      },
+      "sewage_tank": {
+        "name": "Depósito de agua sucia"
+      },
+      "dust_box": {
+        "name": "Depósito de polvo"
+      },
+      "dust_bag": {
+        "name": "Bolsa de polvo"
+      },
+      "station_bag": {
+        "name": "Bolsa de la base"
+      },
+      "maintenance_required": {
+        "name": "Mantenimiento necesario"
+      },
+      "replacement_required": {
+        "name": "Sustitución necesaria"
+      },
+      "firmware_update_ready": {
+        "name": "Actualización de firmware lista"
+      }
+    },
+    "select": {
+      "work_mode": {
+        "name": "Modo de limpieza",
+        "state": {
+          "vacuum": "Aspirar",
+          "mop": "Fregar",
+          "vacuum_then_mop": "Aspirar y luego fregar",
+          "vacuum_and_mop": "Aspirar y fregar"
+        }
+      },
+      "water": {
+        "name": "Humedad de fregado",
+        "state": {
+          "dry": "Algo seco",
+          "normal": "Normal",
+          "wet": "Algo húmedo"
+        }
+      },
+      "mop_strength": {
+        "name": "Presión de mopa",
+        "state": {
+          "normal": "Normal",
+          "high": "Alta"
+        }
+      },
+      "mop_drying_strength": {
+        "name": "Intensidad de secado de mopa",
+        "state": {
+          "quiet": "Silencioso",
+          "strong": "Fuerte",
+          "smart": "Inteligente"
+        }
+      },
+      "rewash_area": {
+        "name": "Relavado por área",
+        "state": {
+          "efficient_15m2": "Eficiente (15 m²)",
+          "normal_20m2": "Normal (20 m²)",
+          "deep_30m2": "Profunda (30 m²)"
+        }
+      },
+      "carpet_mode": {
+        "name": "Modo para alfombras existentes",
+        "state": {
+          "cross": "Cruzar",
+          "clean": "Limpiar",
+          "vacuum_and_mop": "Aspirar y fregar",
+          "avoid": "Evitar"
+        }
+      },
+      "new_carpet_mode": {
+        "name": "Modo para alfombras nuevas",
+        "state": {
+          "cross": "Cruzar",
+          "clean": "Limpiar",
+          "vacuum_and_mop": "Aspirar y fregar",
+          "avoid": "Evitar"
+        }
+      },
+      "freo_intensity": {
+        "name": "Freo: intensidad",
+        "state": {
+          "quick": "Rápida",
+          "normal": "Normal",
+          "deep": "Profunda"
+        }
+      },
+      "dock_default_mode": {
+        "name": "Modo del botón de la base",
+        "state": {
+          "vacuum": "Aspirar",
+          "mop": "Fregar",
+          "vacuum_and_mop": "Aspirar y fregar",
+          "vacuum_then_mop": "Aspirar y luego fregar"
+        }
+      },
+      "obstacle_avoidance": {
+        "name": "Evitar obstáculos",
+        "state": {
+          "smart": "Inteligente",
+          "safer": "Más seguro",
+          "off": "Apagado"
+        }
+      },
+      "robot_default_mode": {
+        "name": "Modo predeterminado del robot",
+        "state": {
+          "vacuum": "Aspirar",
+          "mop": "Fregar",
+          "vacuum_and_mop": "Aspirar y fregar",
+          "vacuum_then_mop": "Aspirar y luego fregar"
+        }
+      },
+      "corner_cleaning": {
+        "name": "Limpieza intensiva de esquinas",
+        "state": {
+          "on": "Encendido",
+          "off": "Apagado"
+        }
+      },
+      "pet_icon": {
+        "name": "Icono de mascota",
+        "state": {
+          "cat": "Gato",
+          "dog": "Perro",
+          "cat_and_dog": "Gato y perro"
+        }
+      },
+      "carpet_priority": {
+        "name": "Prioridad de alfombras",
+        "state": {
+          "default": "Predeterminado",
+          "carpet_first": "Alfombras primero"
+        }
+      },
+      "carpet_focus": {
+        "name": "Limpieza CarpetFocus",
+        "state": {
+          "off": "Apagado",
+          "on": "Encendido"
+        }
+      },
+      "station_light": {
+        "name": "Luz de la base",
+        "state": {
+          "off": "Apagado",
+          "on": "Encendido"
+        }
+      },
+      "freo_remop_limit": {
+        "name": "Freo: límite de refregado",
+        "state": {
+          "smart": "Inteligente",
+          "1": "1 ciclo",
+          "2": "2 ciclos",
+          "3": "3 ciclos"
+        }
+      },
+      "freo_coverage": {
+        "name": "Freo: precisión de cobertura",
+        "state": {
+          "smart": "Inteligente",
+          "standard": "Estándar",
+          "intensive": "Intensiva"
+        }
+      },
+      "freo_suction": {
+        "name": "Freo: potencia",
+        "state": {
+          "smart": "Inteligente",
+          "quiet": "Silencioso",
+          "standard": "Estándar",
+          "strong": "Fuerte",
+          "super_powerful": "Superpotente",
+          "max": "Máxima (no en la app)"
+        }
+      },
+      "freo_mop_humidity": {
+        "name": "Freo: humedad de fregado",
+        "state": {
+          "smart": "Inteligente",
+          "slightly_dry": "Algo seco",
+          "standard": "Estándar",
+          "high": "Alta"
+        }
+      },
+      "voice_language": {
+        "name": "Idioma de voz",
+        "state": {
+          "zh_hans": "Chino (simplificado)",
+          "zh_hant": "Chino (tradicional)",
+          "en": "Inglés",
+          "ko": "Coreano",
+          "ja": "Japonés",
+          "de": "Alemán",
+          "he": "Hebreo",
+          "it": "Italiano",
+          "fr": "Francés",
+          "es": "Español",
+          "ru": "Ruso",
+          "pl": "Polaco",
+          "tr": "Turco",
+          "th": "Tailandés",
+          "vi": "Vietnamita"
+        }
+      },
+      "corner_frequency": {
+        "name": "Frecuencia de limpieza de esquinas",
+        "state": {
+          "off": "Apagado",
+          "every_n_cleans": "Cada N limpiezas",
+          "every_n_days": "Cada N días"
+        }
+      },
+      "rewash_strategy": {
+        "name": "Estrategia de relavado",
+        "state": {
+          "by_area": "Por área",
+          "smart": "Inteligente por zonas"
+        }
+      }
+    },
+    "number": {
+      "passes": {
+        "name": "Pasadas"
+      },
+      "volume": {
+        "name": "Volumen de voz"
+      },
+      "off_peak_charging_hours": {
+        "name": "Duración de carga en horas valle"
+      },
+      "corner_interval": {
+        "name": "Intervalo de limpieza de esquinas"
+      }
+    },
+    "light": {
+      "dock_light": {
+        "name": "Luz de la base"
+      }
+    },
+    "switch": {
+      "empty_dustbin": {
+        "name": "Vaciar depósito"
+      },
+      "wash_mop": {
+        "name": "Lavar mopa"
+      },
+      "dry_mop": {
+        "name": "Secar mopa"
+      },
+      "dry_dust_bin": {
+        "name": "Secar y desinfectar el depósito de polvo"
+      },
+      "dry_dock_bag": {
+        "name": "Secar y desinfectar la bolsa de la base"
+      },
+      "show_room_labels": {
+        "name": "Mostrar nombres de habitaciones"
+      },
+      "show_furniture": {
+        "name": "Mostrar muebles"
+      },
+      "show_furniture_labels": {
+        "name": "Mostrar nombres de muebles"
+      },
+      "plateau_mode": {
+        "name": "Modo meseta"
+      },
+      "auto_detergent": {
+        "name": "Dosificación automática de detergente"
+      },
+      "child_lock": {
+        "name": "Bloqueo infantil"
+      },
+      "carpet_cleaning": {
+        "name": "Limpieza de alfombras"
+      },
+      "dirt_detection": {
+        "name": "Detección inteligente de suciedad"
+      },
+      "carpet_customize": {
+        "name": "Personalizar alfombras existentes"
+      },
+      "pet_mode": {
+        "name": "Modo mascotas"
+      },
+      "smart_deep_clean": {
+        "name": "Freo: limpieza profunda inteligente"
+      },
+      "obstacle_photos": {
+        "name": "Mostrar fotos de obstáculos"
+      },
+      "moisture_proof_pad": {
+        "name": "Protección de la almohadilla antihumedad"
+      },
+      "auto_empty": {
+        "name": "Autovaciado"
+      },
+      "smart_auto_empty": {
+        "name": "Autovaciado inteligente"
+      },
+      "quiet_auto_empty": {
+        "name": "Autovaciado silencioso"
+      },
+      "dust_bag_disinfection": {
+        "name": "Desinfección automática del depósito"
+      },
+      "hot_water_mop_wash": {
+        "name": "Lavado de mopa con agua caliente"
+      },
+      "intensive_large_soiled": {
+        "name": "Freo: limpieza intensiva de manchas grandes"
+      },
+      "voice_assistant": {
+        "name": "Asistente de voz Navo"
+      },
+      "auto_power_off": {
+        "name": "Apagado automático"
+      },
+      "dust_sensor_detection": {
+        "name": "Detección de suciedad por sensor de polvo"
+      },
+      "recognize_all_objects": {
+        "name": "Reconocer todos los objetos"
+      },
+      "precious_item_guard": {
+        "name": "Protección de objetos valiosos"
+      },
+      "do_not_disturb": {
+        "name": "No molestar"
+      },
+      "off_peak_charging": {
+        "name": "Carga en horas valle"
+      },
+      "no_stairs": {
+        "name": "Sin escaleras"
+      }
+    },
+    "button": {
+      "search_pet": {
+        "name": "Buscar mascota"
+      },
+      "stop_remote_control": {
+        "name": "Terminar control remoto"
+      },
+      "continue_task": {
+        "name": "Reanudar tarea interrumpida"
+      }
+    },
+    "time": {
+      "do_not_disturb_start": {
+        "name": "Inicio de No molestar"
+      },
+      "do_not_disturb_end": {
+        "name": "Fin de No molestar"
+      },
+      "off_peak_charging_start": {
+        "name": "Inicio de carga en horas valle"
+      }
+    }
+  }
+}

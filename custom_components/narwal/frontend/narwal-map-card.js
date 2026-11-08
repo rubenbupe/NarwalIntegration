@@ -4,7 +4,7 @@
  * integration; talks to it through narwal/map, narwal/pose, narwal/remote and the
  * narwal.* services. No external dependencies.
  */
-const CARD_VERSION = "1.2.2";
+const CARD_VERSION = "1.3.0";
 
 const MODES = [
   ["vacuum_and_mop", "Vacuum & mop"],
@@ -276,7 +276,8 @@ class NarwalMapCard extends HTMLElement {
       c1: Math.min(map.width - 1, maxC + pad), r1: Math.min(map.height - 1, maxR + pad),
     };
     this._centroids = {};
-    for (const [id, s] of Object.entries(sums)) this._centroids[id] = [s[0] / s[2], s[1] / s[2]];
+    this._roomSize = {};
+    for (const [id, s] of Object.entries(sums)) { this._centroids[id] = [s[0] / s[2], s[1] / s[2]]; this._roomSize[id] = s[2]; }
     this._names = {};
     map.rooms.forEach((r) => { this._names[r.id] = r.name; });
     this._selected = this._selected.filter((id) => this._names[id]);
@@ -401,6 +402,20 @@ class NarwalMapCard extends HTMLElement {
     ctx.drawImage(this._base, 0, 0, cw, ch);
     const accent = this._accent();
 
+    // carpets (outline cells, hatched)
+    for (const cp of this._map.carpets || []) {
+      if (!cp.polygon || cp.polygon.length < 3) continue;
+      ctx.beginPath();
+      cp.polygon.forEach(([x, y], i) => {
+        const [px, py] = this._cellToCanvas(x + 0.5, y + 0.5);
+        i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+      });
+      ctx.closePath();
+      ctx.fillStyle = "rgba(121,85,72,.16)";
+      ctx.fill();
+      ctx.lineWidth = 1; ctx.strokeStyle = "rgba(121,85,72,.55)"; ctx.stroke();
+    }
+
     // no-go zones
     for (const z of this._map.no_go_zones || []) {
       if (!z.polygon || z.polygon.length < 3) continue;
@@ -423,7 +438,10 @@ class NarwalMapCard extends HTMLElement {
     // room labels and order badges
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    for (const [id, [col, row]] of Object.entries(this._centroids)) {
+    const placed = [];
+    const overlaps = (b) => placed.some((o) => b.x < o.x + o.w && b.x + b.w > o.x && b.y < o.y + o.h && b.y + b.h > o.y);
+    const order = Object.entries(this._centroids).sort((a, b) => (this._roomSize[b[0]] || 0) - (this._roomSize[a[0]] || 0));
+    for (const [id, [col, row]] of order) {
       const [u, v] = this._rot(col - this._crop.c0 + 0.5, row - this._crop.r0 + 0.5);
       const px = u * this._scale, py = v * this._scale;
       const order = this._tab === "rooms" ? this._selected.indexOf(Number(id)) : -1;
@@ -437,15 +455,31 @@ class NarwalMapCard extends HTMLElement {
       const sw = this._switchMode && this._showProfiles && this._tab === "rooms" ? this._roomSwitches()[id] : null;
       const prof = sw ? this._profileFor(sw) : "";
       if (name) {
-        ctx.font = "500 11px var(--paper-font-body1_-_font-family, sans-serif)";
-        let tw = ctx.measureText(name).width + 10;
-        if (prof) { ctx.font = "10px sans-serif"; tw = Math.max(tw, ctx.measureText(prof).width + 10); }
-        const bh = prof ? 28 : 16;
+        let showProf = !!prof;
+        const measure = () => {
+          ctx.font = "500 11px var(--paper-font-body1_-_font-family, sans-serif)";
+          let w = ctx.measureText(name).width + 10;
+          if (showProf) { ctx.font = "10px sans-serif"; w = Math.max(w, ctx.measureText(prof).width + 10); }
+          return { w, h: showProf ? 28 : 16 };
+        };
+        let { w: tw, h: bh } = measure();
+        // try the centroid, then nudges; drop the profile line if still crowded
+        let ly = py, box = null;
+        for (const pass of [0, 1]) {
+          if (pass === 1 && showProf) { showProf = false; ({ w: tw, h: bh } = measure()); }
+          for (const dy of [0, bh + 2, -(bh + 2), 2 * (bh + 2)]) {
+            const b = { x: px - tw / 2, y: py + dy - 8, w: tw, h: bh };
+            if (!overlaps(b)) { box = b; ly = py + dy; break; }
+          }
+          if (box) break;
+        }
+        if (!box) box = { x: px - tw / 2, y: py - 8, w: tw, h: bh };
+        placed.push(box);
         ctx.fillStyle = "rgba(255,255,255,.86)";
-        roundRect(ctx, px - tw / 2, py - 8, tw, bh, 8); ctx.fill();
+        roundRect(ctx, box.x, box.y, tw, bh, 8); ctx.fill();
         ctx.font = "500 11px var(--paper-font-body1_-_font-family, sans-serif)";
-        ctx.fillStyle = "#3c3a48"; ctx.fillText(name, px, py);
-        if (prof) { ctx.font = "10px sans-serif"; ctx.fillStyle = "#6b6878"; ctx.fillText(prof, px, py + 12); }
+        ctx.fillStyle = "#3c3a48"; ctx.fillText(name, px, ly);
+        if (showProf) { ctx.font = "10px sans-serif"; ctx.fillStyle = "#6b6878"; ctx.fillText(prof, px, ly + 12); }
       }
     }
 

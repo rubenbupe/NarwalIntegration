@@ -64,3 +64,56 @@ live map), `switch_map`, `delete_map` (needs confirm), `start_mapping`, `continu
 - Not implemented on purpose: custom button mappings (can disable the physical buttons), video/microphone/photos
   (Narwal cloud + Agora; `developer/take_picture` returns an AES-encrypted image whose key comes
   from the cloud).
+
+## Per-room Freo Mind
+
+Each room has `switch.<room> Freo Mind`, stored with the other room profile fields (restored
+across restarts). A Freo room gets `CleanParam.9 = 1`; the task gets `TaskOption.1 = 1` when the
+whole task or any room uses Freo. `narwal.clean_rooms` also takes `freo: true` for the whole task.
+
+## Map card (`custom:narwal-map-card`)
+
+Served from `/narwal_static/narwal-map-card.js` and registered automatically on every dashboard
+(no Lovelace resource to add). Visual editor included. Options:
+
+| Option | Meaning |
+|---|---|
+| `entity` | the Narwal vacuum |
+| `title` | header text (empty hides the header in picker mode) |
+| `tabs` | full card tabs to show: `rooms`, `zones`, `goto`, `nogo`, `remote` |
+| `default_tab` | tab opened first |
+| `selection: switches` | picker mode: no actions, tapping a room toggles its selection switch |
+| `zone_mode_entity` | input_boolean: picker shows a Rooms/Zones toggle bound to it |
+| `zones_entity` | input_text: drawn zones stored as JSON `[[x1, y1, x2, y2], ...]` |
+| `room_path` | hold a room to open this path (`{key}` = room key, e.g. `/dash/narwal-room-{key}`) |
+| `global_entity` | when this boolean is off, each room shows its profile summary |
+| `profile_entity` | profile summary sensor template (default `sensor.narwal_{key}_profile`) |
+| `rotation` | override the map rotation (0/90/180/270; default: the robot's) |
+
+Picker example (the dashboard's own Start script cleans the selection or the zones):
+
+```yaml
+type: custom:narwal-map-card
+entity: vacuum.narwal_flow_vacuum
+selection: switches
+zone_mode_entity: input_boolean.narwal_zone_mode
+zones_entity: input_text.narwal_zones
+room_path: /main-dashboard/narwal-room-{key}
+```
+
+Touch gestures are only captured while drawing (zones, no-go), so pages scroll on phones.
+
+## WebSocket API
+
+| Command | Returns / does |
+|---|---|
+| `narwal/map` (`entity_id`, `refresh`) | grid (base64, 1 byte per cell: room id, 250 wall, 251 floor), size, `left`/`bottom`, resolution, rooms (names from the vacuum's area mapping), dock, robot, no-go zones, carpets (outlines), thresholds, rotation. Cached 20 s. |
+| `narwal/pose` | live robot pose in cells from `map/display_map` (no robot call), status, docked, battery |
+| `narwal/remote` (`mode`, `linear`, `angular`) | manual control mode and one velocity sample |
+
+Cells are absolute map cells (same frame as `clean_zone`, `add_no_go_zone`, `add_carpet`);
+decimetres = cells × resolution / 100. `clean_zone` accepts `zones: [[x1, y1, x2, y2], ...]`.
+
+## Translations
+
+English and Spanish (`translations/es.json`) for every entity and the config flow.
