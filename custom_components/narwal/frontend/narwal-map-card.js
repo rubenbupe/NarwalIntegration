@@ -4,7 +4,7 @@
  * integration; talks to it through narwal/map, narwal/pose, narwal/remote and the
  * narwal.* services. No external dependencies.
  */
-const CARD_VERSION = "1.1.0";
+const CARD_VERSION = "1.2.0";
 
 const MODES = [
   ["vacuum_and_mop", "Vacuum & mop"],
@@ -78,7 +78,11 @@ class NarwalMapCard extends HTMLElement {
 
   setConfig(config) {
     this._config = { title: config.selection === "switches" ? "" : "Narwal", ...config };
-    this._tab = this._config.selection === "switches" ? "rooms" : this._config.default_tab || "rooms";
+    const allowed = Array.isArray(this._config.tabs) && this._config.tabs.length ? this._config.tabs : TABS.map((t) => t[0]);
+    this._allowed = allowed;
+    this._tab = this._config.selection === "switches"
+      ? "rooms"
+      : allowed.includes(this._config.default_tab) ? this._config.default_tab : allowed[0];
     this._selected = [];
     this._zones = [];
     this._goto = null;
@@ -125,9 +129,59 @@ class NarwalMapCard extends HTMLElement {
     const raw = (this._hass.states[orderEntity] || {}).state || "";
     const ordered = raw.split(",").map((v) => parseInt(v, 10)).filter((v) => on.includes(v));
     const selected = [...ordered, ...on.filter((v) => !ordered.includes(v))];
-    if (selected.join(",") === this._selected.join(",")) return;
+    let changed = selected.join(",") !== this._selected.join(",");
     this._selected = selected;
-    if (this._map) { this._paintBase(); this._draw(); this._renderPanel(); }
+    // zone mode + zones live in HA helpers so the dashboard's Start can use them
+    const zm = this._config.zone_mode_entity;
+    const zoneMode = !!zm && (this._hass.states[zm] || {}).state === "on";
+    const tab = zoneMode ? "zones" : "rooms";
+    if (tab !== this._tab) { this._tab = tab; changed = true; this._renderTabs(); }
+    const ze = this._config.zones_entity;
+    if (ze && !this._drag) {
+      const raw = (this._hass.states[ze] || {}).state || "[]";
+      if (raw !== this._zonesRaw) {
+        this._zonesRaw = raw;
+        try {
+          this._zones = (JSON.parse(raw) || []).map(([x1, y1, x2, y2]) => ({ x1, y1, x2, y2 }));
+        } catch (_) { this._zones = []; }
+        changed = true;
+      }
+    }
+    const ge = this._config.global_entity || "input_boolean.narwal_use_global_settings";
+    const profiles = (this._hass.states[ge] || {}).state === "off";
+    const profText = profiles ? Object.entries(this._roomSwitches()).map(([id, st]) => `${id}:${this._profileFor(st)}`).join("|") : "";
+    if (profText !== this._profText) { this._profText = profText; changed = true; }
+    this._showProfiles = profiles;
+    if (changed && this._map) { this._paintBase(); this._draw(); this._renderPanel(); }
+  }
+
+  _roomKey(st) {
+    const m = st.entity_id.match(/narwal_flow_(.+)_selected$/);
+    return m ? m[1] : null;
+  }
+
+  _profileFor(st) {
+    const key = this._roomKey(st);
+    const tpl = this._config.profile_entity || "sensor.narwal_{key}_profile";
+    const ps = key && this._hass.states[tpl.replace("{key}", key)];
+    return ps ? ps.state : "";
+  }
+
+  _saveZones() {
+    const ze = this._config.zone_mode_entity && this._config.zones_entity;
+    if (!this._switchMode || !ze) return;
+    const value = JSON.stringify(this._zones.map((z) => [z.x1, z.y1, z.x2, z.y2]));
+    this._zonesRaw = value;
+    this._hass.callService("input_text", "set_value", { entity_id: this._config.zones_entity, value });
+  }
+
+  _openRoom(id) {
+    const st = this._roomSwitches()[id];
+    const key = st && this._roomKey(st);
+    const tpl = this._config.room_path;
+    if (!key || !tpl) return;
+    history.pushState(null, "", tpl.replace("{key}", key));
+    window.dispatchEvent(new CustomEvent("location-changed"));
   }
 
   connectedCallback() {
@@ -369,11 +423,18 @@ class NarwalMapCard extends HTMLElement {
         ctx.fillStyle = "#fff"; ctx.fillText(String(order + 1), px, py - 14);
       }
       const name = this._names[id] || "";
+      const sw = this._switchMode && this._showProfiles && this._tab === "rooms" ? this._roomSwitches()[id] : null;
+      const prof = sw ? this._profileFor(sw) : "";
       if (name) {
-        const tw = ctx.measureText(name).width + 10;
-        ctx.fillStyle = "rgba(255,255,255,.82)";
-        roundRect(ctx, px - tw / 2, py - 8, tw, 16, 8); ctx.fill();
+        ctx.font = "500 11px var(--paper-font-body1_-_font-family, sans-serif)";
+        let tw = ctx.measureText(name).width + 10;
+        if (prof) { ctx.font = "10px sans-serif"; tw = Math.max(tw, ctx.measureText(prof).width + 10); }
+        const bh = prof ? 28 : 16;
+        ctx.fillStyle = "rgba(255,255,255,.86)";
+        roundRect(ctx, px - tw / 2, py - 8, tw, bh, 8); ctx.fill();
+        ctx.font = "500 11px var(--paper-font-body1_-_font-family, sans-serif)";
         ctx.fillStyle = "#3c3a48"; ctx.fillText(name, px, py);
+        if (prof) { ctx.font = "10px sans-serif"; ctx.fillStyle = "#6b6878"; ctx.fillText(prof, px, py + 12); }
       }
     }
 
@@ -439,6 +500,16 @@ class NarwalMapCard extends HTMLElement {
     if (!this._map) return;
     const p = this._point(ev);
     this._press = { x: p[0], y: p[1], moved: false };
+    clearTimeout(this._holdTimer);
+    if (this._tab === "rooms" && this._switchMode && this._config.room_path) {
+      const c = this._canvasToCell(p[0], p[1]);
+      const id = this._roomAt(c[0], c[1]);
+      if (id) {
+        this._holdTimer = setTimeout(() => {
+          if (this._press && !this._press.moved) { this._press.held = true; this._openRoom(id); }
+        }, 550);
+      }
+    }
     const rects = this._tab === "zones" ? this._zones : this._tab === "nogo" && this._draft ? [this._draft] : [];
     for (let i = rects.length - 1; i >= 0; i--) {
       const z = rects[i]._px;
@@ -463,7 +534,7 @@ class NarwalMapCard extends HTMLElement {
   _onMove(ev) {
     if (!this._press) return;
     const p = this._point(ev);
-    if (dist(p, [this._press.x, this._press.y]) > 6) this._press.moved = true;
+    if (dist(p, [this._press.x, this._press.y]) > 6) { this._press.moved = true; clearTimeout(this._holdTimer); }
     const d = this._drag;
     if (!d || !this._press.moved) return;
     const c = this._canvasToCell(p[0], p[1]);
@@ -492,7 +563,9 @@ class NarwalMapCard extends HTMLElement {
   _onUp(ev) {
     const press = this._press, d = this._drag;
     this._press = null; this._drag = null;
-    if (!press || !this._map) return;
+    clearTimeout(this._holdTimer);
+    if (!press || !this._map || press.held) return;
+    const zonesBefore = JSON.stringify(this._zones.map((z) => [z.x1, z.y1, z.x2, z.y2]));
     const p = this._point(ev);
     if (d && d.kind === "delete" && !press.moved) {
       if (this._tab === "zones") this._zones.splice(d.index, 1); else this._draft = null;
@@ -518,6 +591,7 @@ class NarwalMapCard extends HTMLElement {
       }
     }
     if (this._tab === "nogo" && this._draft && (Math.abs(this._draft.x2 - this._draft.x1) < 3 || Math.abs(this._draft.y2 - this._draft.y1) < 3)) this._draft = null;
+    if (this._tab === "zones" && JSON.stringify(this._zones.map((z) => [z.x1, z.y1, z.x2, z.y2])) !== zonesBefore) this._saveZones();
     this._draw();
     this._renderPanel();
   }
@@ -651,9 +725,20 @@ class NarwalMapCard extends HTMLElement {
   _renderTabs() {
     const tabs = this.shadowRoot.querySelector(".tabs");
     tabs.innerHTML = "";
-    tabs.style.display = this._switchMode ? "none" : "";
-    if (this._switchMode) return;
-    for (const [key, label, icon] of TABS) {
+    if (this._switchMode) {
+      const zm = this._config.zone_mode_entity;
+      tabs.style.display = zm ? "" : "none";
+      if (!zm) return;
+      for (const [key, label, icon] of [["rooms", "Rooms", "mdi:floor-plan"], ["zones", "Zones", "mdi:selection-drag"]]) {
+        tabs.appendChild(chip(label, icon, this._tab === key, () => {
+          this._hass.callService("input_boolean", key === "zones" ? "turn_on" : "turn_off", { entity_id: zm });
+        }));
+      }
+      return;
+    }
+    const visible = TABS.filter(([key]) => this._allowed.includes(key));
+    tabs.style.display = visible.length > 1 ? "" : "none";
+    for (const [key, label, icon] of visible) {
       const b = chip(label, icon, this._tab === key, () => {
         if (this._tab === "remote" && key !== "remote") this._stopDriving();
         this._tab = key;
@@ -705,10 +790,21 @@ class NarwalMapCard extends HTMLElement {
     }
     const bar = div("bar"), end = div("bar end");
     if (this._switchMode) {
-      hint.textContent = this._selected.length
-        ? this._selected.map((id, i) => `${i + 1}. ${this._names[id] || id}`).join("  ·  ")
-        : "Tap rooms to choose them, in cleaning order (none = whole house)";
       hint.style.paddingBottom = "12px";
+      if (this._tab === "zones") {
+        hint.textContent = this._zones.length
+          ? `${this._zones.length} zone${this._zones.length > 1 ? "s" : ""} · drag to move, ● to resize, ✕ to remove`
+          : "Drag on the map to draw up to 5 zones";
+        if (this._zones.length) {
+          end.appendChild(button("Clear zones", "ghost", () => { this._zones = []; this._saveZones(); this._draw(); this._renderPanel(); }));
+          panel.appendChild(end);
+        }
+      } else {
+        const holdHint = this._config.room_path ? " · hold a room for its settings" : "";
+        hint.textContent = this._selected.length
+          ? this._selected.map((id, i) => `${i + 1}. ${this._names[id] || id}`).join("  ·  ")
+          : `Tap rooms in cleaning order (none = whole house)${holdHint}`;
+      }
       return;
     }
     if (this._tab === "rooms") {
